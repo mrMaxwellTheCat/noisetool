@@ -191,7 +191,7 @@ class TestParseArgs:
         assert args.dither == 16
 
     def test_compressor(self) -> None:
-        args = parse_args(["--compressor", "-20,4"])
+        args = parse_args(["--compressor=-20,4"])
         assert args.compressor == "-20,4"
 
     def test_rms(self) -> None:
