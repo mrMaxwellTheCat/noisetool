@@ -16,12 +16,16 @@ from noise.config import generate_example_config, load_config
 from noise.effects import (
     apply_envelope,
     bandpass,
+    bitcrush,
     dc_blocker,
     fade_in,
     fade_out,
     highpass,
     invert_phase,
     lowpass,
+    modulate_amplitude,
+    pan,
+    stereo_width,
 )
 from noise.effects import reverse as reverse_audio
 from noise.formats import save_aiff, save_ogg, save_raw
@@ -225,6 +229,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "-i",
+        "--interactive",
+        action="store_true",
+        default=False,
+        help="Run in interactive wizard mode",
+    )
+
+    parser.add_argument(
         "--no-banner",
         action="store_true",
         default=False,
@@ -336,6 +348,38 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         metavar="A,D,S,R",
         help="Apply ADSR envelope (e.g., 0.1,0.2,0.7,0.3 for attack,decay,sustain,release)",
+    )
+
+    parser.add_argument(
+        "--width",
+        type=float,
+        default=None,
+        metavar="WIDTH",
+        help="Stereo width (0.0=mono, 1.0=original, >1.0=wider). Stereo only.",
+    )
+
+    parser.add_argument(
+        "--pan",
+        type=float,
+        default=None,
+        metavar="PAN",
+        help="Pan position (-1.0=left, 0.0=center, 1.0=right)",
+    )
+
+    parser.add_argument(
+        "--tremolo",
+        type=str,
+        default=None,
+        metavar="RATE,DEPTH",
+        help="Amplitude modulation (tremolo). E.g., 5,0.5",
+    )
+
+    parser.add_argument(
+        "--bitcrush",
+        type=int,
+        default=None,
+        metavar="BITS",
+        help="Bitcrushing (1-24 bits). Lower = more lo-fi.",
     )
 
     parser.add_argument(
@@ -547,7 +591,60 @@ def _run_benchmark(n_samples: int = 441000, sample_rate: int = 44100) -> None:
     console.print("[dim]Higher real-time ratio = faster than real-time[/]")
 
 
+def _generate_from_wizard(config: dict[str, Any]) -> None:
+    noise_types = config["noise_types"]
+    sample_rate = config["sample_rate"]
+    duration = config["duration"]
+    n_samples = int(sample_rate * duration)
+    n_channels_list = config["n_channels"]
+    formats = config["formats"]
+    bit_depth = config["bit_depth"]
+    lufs_target = config["lufs"]
+    peak_target = config["peak"]
+    seed = config["seed"]
+    output_dir = Path(config["output_dir"])
+    output_dir.mkdir(parents=True, exist_ok=True)
+    rng = np.random.default_rng(seed) if seed is not None else None
+
+    files_created: list[Path] = []
+    progress = make_progress()
+    total = len(noise_types) * len(n_channels_list) * len(formats)
+    task = progress.add_task("Generating...", total=total)
+
+    with progress:
+        for noise_type in noise_types:
+            for n_channels in n_channels_list:
+                data = NOISE_GENERATORS[noise_type](n_samples, n_channels=n_channels, rng=rng)
+                if lufs_target is not None:
+                    data = lufs_normalize(data, target_lufs=lufs_target, sample_rate=sample_rate)
+                if peak_target is not None:
+                    peak = float(np.max(np.abs(data)))
+                    if peak > 0:
+                        target = 10.0 ** (peak_target / 20.0)
+                        data = data * (target / peak)
+                suffix = "_mono" if n_channels == 1 else ""
+                for fmt in formats:
+                    filename = f"{noise_type}_noise{suffix}.{fmt}"
+                    filepath = output_dir / filename
+                    FORMATS[fmt](filepath, data, sample_rate=sample_rate, bit_depth=bit_depth)
+                    files_created.append(filepath)
+                    progress.advance(task)
+
+    print_results_table(files_created, output_dir)
+    print_success(f"Done — {len(files_created)} file(s) saved to {output_dir}")
+
+
 def _main(argv: list[str] | None = None) -> None:
+    import sys as _sys
+
+    no_cli_args = (argv is None and len(_sys.argv) <= 1) or (argv is not None and len(argv) == 0)
+    if no_cli_args:
+        from noise.interactive import run_wizard
+
+        wizard_config = run_wizard()
+        _generate_from_wizard(wizard_config)
+        return
+
     args = parse_args(argv)
 
     if args.benchmark:
@@ -596,18 +693,38 @@ def _main(argv: list[str] | None = None) -> None:
         args.seed = config.seed
         args.output_dir = Path(config.output_dir)
 
+    if args.interactive:
+        wizard_config = run_wizard()
+        args.type = "custom"
+        args.duration = wizard_config["duration"]
+        args.sample_rate = wizard_config["sample_rate"]
+        args.bit_depth = wizard_config["bit_depth"]
+        args.lufs = wizard_config["lufs"]
+        args.peak = wizard_config["peak"]
+        args.seed = wizard_config["seed"]
+        args.output_dir = Path(wizard_config["output_dir"])
+        args.no_banner = True
+        noise_types = wizard_config["noise_types"]
+        channel_configs = wizard_config["n_channels"]
+        format_configs = wizard_config["formats"]
+
     sample_rate = args.sample_rate
     n_samples = int(sample_rate * args.duration)
     rng = np.random.default_rng(args.seed) if args.seed is not None else None
 
-    if args.mix is not None:
-        noise_types = ["mixed"]
-        mix_weights = parse_mix_arg(args.mix)
+    if not args.interactive:
+        if args.mix is not None:
+            noise_types = ["mixed"]
+            mix_weights = parse_mix_arg(args.mix)
+        else:
+            noise_types = list(NOISE_GENERATORS.keys()) if args.type == "all" else [args.type]
+            mix_weights = None
+        channel_configs = (
+            [1, 2] if not args.mono and not args.stereo else ([1] if args.mono else [2])
+        )
+        format_configs = ["wav", "flac"] if args.format == "all" else [args.format]
     else:
-        noise_types = list(NOISE_GENERATORS.keys()) if args.type == "all" else [args.type]
         mix_weights = None
-    channel_configs = [1, 2] if not args.mono and not args.stereo else ([1] if args.mono else [2])
-    format_configs = ["wav", "flac"] if args.format == "all" else [args.format]
 
     if args.dry_run:
         print_info("Dry run \u2014 no files will be created:")
@@ -766,6 +883,17 @@ def _main(argv: list[str] | None = None) -> None:
                         data = apply_envelope(
                             data, parts[0], parts[1], parts[2], parts[3], sample_rate
                         )
+
+                if args.width is not None:
+                    data = stereo_width(data, args.width)
+                if args.pan is not None:
+                    data = pan(data, args.pan)
+                if args.tremolo is not None:
+                    parts = [float(x) for x in args.tremolo.split(",")]
+                    if len(parts) == 2:
+                        data = modulate_amplitude(data, parts[0], parts[1], sample_rate)
+                if args.bitcrush is not None:
+                    data = bitcrush(data, args.bitcrush)
 
                 if args.stats:
                     stats = compute_stats(data, sample_rate)

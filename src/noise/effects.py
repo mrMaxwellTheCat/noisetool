@@ -163,6 +163,52 @@ def apply_envelope(
     return (data * envelope.reshape(-1, 1)).astype(data.dtype)
 
 
+def stereo_width(data: np.ndarray, width: float = 1.0) -> np.ndarray:
+    if data.shape[1] != 2:
+        return data
+    mid = (data[:, 0] + data[:, 1]) / 2
+    side = (data[:, 0] - data[:, 1]) / 2
+    side *= width
+    out = np.empty_like(data)
+    out[:, 0] = mid + side
+    out[:, 1] = mid - side
+    max_val = np.max(np.abs(out))
+    if max_val > 0:
+        out /= max_val
+    return out
+
+
+def pan(data: np.ndarray, pan_value: float = 0.0) -> np.ndarray:
+    if data.ndim == 1:
+        data = data.reshape(-1, 1)
+    if data.shape[1] == 1:
+        data = np.repeat(data, 2, axis=1)
+
+    left_gain = np.clip(1.0 - max(pan_value, 0), 0.0, 1.0)
+    right_gain = np.clip(1.0 + min(pan_value, 0), 0.0, 1.0)
+
+    out = np.empty_like(data)
+    out[:, 0] = data[:, 0] * left_gain
+    out[:, 1] = data[:, 1] if data.shape[1] > 1 else data[:, 0]
+    out[:, 1] *= right_gain
+    return out
+
+
+def modulate_amplitude(
+    data: np.ndarray, rate_hz: float = 5.0, depth: float = 0.5, sample_rate: int = 44100
+) -> np.ndarray:
+    n = data.shape[0]
+    t = np.arange(n) / sample_rate
+    modulator = 1.0 - depth * 0.5 * (1.0 + np.sin(2 * np.pi * rate_hz * t))
+    return (data * modulator.reshape(-1, 1)).astype(data.dtype)
+
+
+def bitcrush(data: np.ndarray, bits: int = 8) -> np.ndarray:
+    max_val = 2 ** (bits - 1)
+    quantized = np.round(data * max_val) / max_val
+    return quantized.astype(np.float32)  # type: ignore[no-any-return]
+
+
 def normalize_peak(data: np.ndarray, target_db: float = -1.0) -> np.ndarray:
     """Peak-normalize audio to a target level in dB.
 

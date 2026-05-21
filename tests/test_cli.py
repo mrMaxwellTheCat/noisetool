@@ -170,6 +170,22 @@ class TestParseArgs:
         args = parse_args(["--envelope", "0.1,0.2,0.7,0.3"])
         assert args.envelope == "0.1,0.2,0.7,0.3"
 
+    def test_width(self) -> None:
+        args = parse_args(["--width", "0.5"])
+        assert args.width == 0.5
+
+    def test_pan(self) -> None:
+        args = parse_args(["--pan", "-0.5"])
+        assert args.pan == -0.5
+
+    def test_tremolo(self) -> None:
+        args = parse_args(["--tremolo", "5,0.5"])
+        assert args.tremolo == "5,0.5"
+
+    def test_bitcrush(self) -> None:
+        args = parse_args(["--bitcrush", "8"])
+        assert args.bitcrush == 8
+
     def test_invalid_noise_type(self) -> None:
         with pytest.raises(SystemExit):
             parse_args(["--type", "green"])
