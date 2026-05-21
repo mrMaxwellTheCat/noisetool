@@ -74,11 +74,11 @@ noisetool
 
 Launches an interactive wizard. Choose **quick mode** (pick a preset: streaming, broadcast, podcast, quick, loop) or **custom mode** (select noise types, channels, duration, format, sample rate, loudness target, output folder).
 
-### CLI mode
+### CLI mode (with arguments)
 
 ```bash
-# Generate all noise types (defaults: 30s, stereo+mono, WAV+FLAC)
-noisetool
+# Explicit CLI mode (pass any argument to skip the wizard)
+noisetool --type white --mono -f wav --lufs -14
 
 # Generate white noise only, mono, WAV, normalized to -14 LUFS
 noisetool --type white --mono -f wav --lufs -14
