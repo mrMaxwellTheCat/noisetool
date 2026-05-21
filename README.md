@@ -1,10 +1,10 @@
 # noisetool
 
-[![CI](https://github.com/mrMaxwellTheCat/noise/actions/workflows/ci.yml/badge.svg)](https://github.com/mrMaxwellTheCat/noise/actions/workflows/ci.yml)
+[![CI](https://github.com/mrMaxwellTheCat/noisetool/actions/workflows/ci.yml/badge.svg)](https://github.com/mrMaxwellTheCat/noisetool/actions/workflows/ci.yml)
 [![PyPI version](https://img.shields.io/pypi/v/noisetool)](https://pypi.org/project/noisetool/)
 [![Python versions](https://img.shields.io/pypi/pyversions/noisetool)](https://pypi.org/project/noisetool/)
-[![License](https://img.shields.io/pypi/l/noisetool)](https://github.com/mrMaxwellTheCat/noise/blob/master/LICENSE)
-[![Codecov](https://codecov.io/gh/mrMaxwellTheCat/noise/branch/master/graph/badge.svg)](https://codecov.io/gh/mrMaxwellTheCat/noise)
+[![License](https://img.shields.io/pypi/l/noisetool)](https://github.com/mrMaxwellTheCat/noisetool/blob/master/LICENSE)
+[![Codecov](https://codecov.io/gh/mrMaxwellTheCat/noisetool/branch/master/graph/badge.svg)](https://codecov.io/gh/mrMaxwellTheCat/noisetool)
 
 **High-quality noise generator** — Generate white, pink, brown, blue, violet, and grey noise audio files with LUFS loudness normalization, audio effects, analysis tools, and parallel batch processing.
 
@@ -51,7 +51,7 @@ pip install "noisetool[dev]"
 ### From source
 
 ```bash
-git clone https://github.com/mrMaxwellTheCat/noise.git
+git clone https://github.com/mrMaxwellTheCat/noisetool.git
 cd noise
 pip install -e ".[dev]"
 ```

@@ -30,9 +30,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/mrMaxwellTheCat/noise"
-Repository = "https://github.com/mrMaxwellTheCat/noise"
-Issues = "https://github.com/mrMaxwellTheCat/noise/issues"
+Homepage = "https://github.com/mrMaxwellTheCat/noisetool"
+Repository = "https://github.com/mrMaxwellTheCat/noisetool"
+Issues = "https://github.com/mrMaxwellTheCat/noisetool/issues"
 
 [project.scripts]
 noisetool = "noise.cli:main"
