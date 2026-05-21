@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import logging
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -13,6 +15,7 @@ from noise.completion import SHELL_COMPLETION_SCRIPT, add_completion_args
 from noise.config import generate_example_config, load_config
 from noise.effects import dc_blocker, fade_in, fade_out, invert_phase
 from noise.effects import reverse as reverse_audio
+from noise.formats import save_aiff, save_raw
 from noise.generator import (
     generate_blue_noise,
     generate_brown_noise,
@@ -60,6 +63,8 @@ NOISE_DESCRIPTIONS = {
 FORMATS = {
     "wav": save_wav,
     "flac": save_flac,
+    "aiff": save_aiff,
+    "raw": save_raw,
 }
 
 
@@ -130,7 +135,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--format",
         type=str,
         default="all",
-        choices=["all", "wav", "flac"],
+        choices=["all", "wav", "flac", "aiff", "raw"],
         help="Output format (default: both wav and flac)",
     )
 
@@ -298,13 +303,122 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--parallel",
+        action="store_true",
+        default=False,
+        help="Generate files in parallel using multiple threads",
+    )
+
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Number of worker threads for parallel generation (default: CPU count)",
+    )
+
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         default=False,
         help="Show what would be generated without creating files",
     )
 
+    parser.add_argument(
+        "--loop",
+        action="store_true",
+        default=False,
+        help="Generate seamless looping noise (cross-fade start/end to avoid clicks)",
+    )
+
+    parser.add_argument(
+        "--continuous",
+        action="store_true",
+        default=False,
+        help="Generate noise continuously until interrupted (writes sequential files)",
+    )
+
     return parser.parse_args(argv)
+
+
+def _generate_one(
+    noise_type: str,
+    n_samples: int,
+    n_channels: int,
+    sample_rate: int,
+    rng_seed: int | None,
+    lufs_target: float | None,
+    peak_target: float | None,
+    apply_dc_block: bool,
+    fade_in_sec: float | None,
+    fade_out_sec: float | None,
+    apply_reverse: bool,
+    apply_invert: bool,
+    output_dir: Path,
+    bit_depth: int,
+    formats: list[str],
+) -> list[Path]:
+    rng = np.random.default_rng(rng_seed) if rng_seed is not None else None
+    data = NOISE_GENERATORS[noise_type](n_samples, n_channels=n_channels, rng=rng)
+
+    if lufs_target is not None:
+        data = lufs_normalize(data, target_lufs=lufs_target, sample_rate=sample_rate)
+
+    if apply_dc_block:
+        data = dc_blocker(data)
+    if fade_in_sec is not None:
+        data = fade_in(data, fade_in_sec, sample_rate)
+    if fade_out_sec is not None:
+        data = fade_out(data, fade_out_sec, sample_rate)
+    if apply_reverse:
+        data = reverse_audio(data)
+    if apply_invert:
+        data = invert_phase(data)
+
+    if peak_target is not None:
+        current_peak = float(np.max(np.abs(data)))
+        if current_peak > 0:
+            target_peak = 10.0 ** (peak_target / 20.0)
+            data = data * (target_peak / current_peak)
+
+    channel_label = "mono" if n_channels == 1 else ""
+    suffix = f"_{channel_label}" if channel_label else ""
+
+    files: list[Path] = []
+    for fmt in formats:
+        filename = f"{noise_type}_noise{suffix}.{fmt}"
+        filepath = output_dir / filename
+        saver = FORMATS[fmt]
+        saver(filepath, data, sample_rate=sample_rate, bit_depth=bit_depth)
+        files.append(filepath)
+
+    return files
+
+
+def make_loopable(data: np.ndarray, crossfade_samples: int = 256) -> np.ndarray:
+    """Apply a fade-in/fade-out at the boundaries to make noise seamless for looping.
+
+    Uses a linear cross-fade between the end and beginning of the signal.
+
+    Args:
+        data: Audio array, shape (n_samples, n_channels).
+        crossfade_samples: Number of samples for the crossfade region.
+
+    Returns:
+        Loopable audio (slightly shorter due to crossfade).
+    """
+    n = data.shape[0]
+    if crossfade_samples >= n // 2:
+        return data
+    fade_up = np.linspace(0.0, 1.0, crossfade_samples).reshape(-1, 1)
+    fade_down = np.linspace(1.0, 0.0, crossfade_samples).reshape(-1, 1)
+    out = data.copy()
+    out[:crossfade_samples] *= fade_up
+    out[-crossfade_samples:] *= fade_down
+    overlap = (data[:crossfade_samples] * fade_down + data[-crossfade_samples:] * fade_up) / 2
+    out[-crossfade_samples:] += overlap * (1 - fade_down)
+    out[:crossfade_samples] += overlap * (1 - fade_up)
+    return out  # type: ignore[no-any-return]
 
 
 def _main(argv: list[str] | None = None) -> None:
@@ -381,7 +495,77 @@ def _main(argv: list[str] | None = None) -> None:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     output_dir = output_dir.resolve()
+
     files_created: list[Path] = []
+
+    if args.parallel:
+        n_workers = args.workers or None
+        tasks: list[dict[str, Any]] = []
+        for noise_type in noise_types:
+            for n_channels in channel_configs:
+                tasks.append(
+                    {
+                        "noise_type": noise_type,
+                        "n_samples": n_samples,
+                        "n_channels": n_channels,
+                        "sample_rate": sample_rate,
+                        "rng_seed": args.seed,
+                        "lufs_target": args.lufs,
+                        "peak_target": args.peak,
+                        "apply_dc_block": args.dc_block,
+                        "fade_in_sec": args.fade_in,
+                        "fade_out_sec": args.fade_out,
+                        "apply_reverse": args.reverse,
+                        "apply_invert": args.invert,
+                        "output_dir": output_dir,
+                        "bit_depth": args.bit_depth,
+                        "formats": format_configs,
+                    }
+                )
+
+        print_info(f"Generating {len(tasks)} task(s) with parallel worker(s)...")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=n_workers) as executor:
+            futures = [executor.submit(_generate_one, **t) for t in tasks]
+            for future in concurrent.futures.as_completed(futures):
+                files_created.extend(future.result())
+
+        print_results_table(files_created, output_dir)
+        print_success(f"Done \u2014 {len(files_created)} file(s) saved to {output_dir}")
+        return
+
+    if args.continuous:
+        print_info(f"Continuous generation mode \u2014 writing to {output_dir}")
+        print_info("Press Ctrl+C to stop")
+        counter = 0
+        try:
+            while True:
+                for noise_type in noise_types:
+                    for n_channels in channel_configs:
+                        rng = np.random.default_rng()
+                        data = NOISE_GENERATORS[noise_type](
+                            n_samples, n_channels=n_channels, rng=rng
+                        )
+                        if args.loop:
+                            data = make_loopable(data)
+                        if args.lufs is not None:
+                            data = lufs_normalize(
+                                data, target_lufs=args.lufs, sample_rate=sample_rate
+                            )
+                        channel_label = "mono" if n_channels == 1 else ""
+                        suffix = f"_{channel_label}" if channel_label else ""
+                        for fmt in format_configs:
+                            filename = f"{noise_type}_noise{suffix}_{counter:04d}.{fmt}"
+                            filepath = output_dir / filename
+                            saver = FORMATS[fmt]
+                            saver(filepath, data, sample_rate=sample_rate, bit_depth=args.bit_depth)
+                        counter += 1
+                if args.verbose:
+                    print_info(f"Batch {counter} complete")
+        except KeyboardInterrupt:
+            print_success(
+                f"Continuous generation stopped. {counter} batch(es) saved to {output_dir}"
+            )
+        return
 
     progress = make_progress()
     total_tasks = len(noise_types) * len(channel_configs) * len(format_configs)

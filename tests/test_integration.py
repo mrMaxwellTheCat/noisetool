@@ -9,6 +9,30 @@ from noise.cli import main
 from noise.lufs import measure_loudness
 
 
+def test_parallel_generation(tmp_path: Path) -> None:
+    from noise.cli import _main
+
+    _main(
+        [
+            "--type",
+            "all",
+            "--duration",
+            "0.05",
+            "--mono",
+            "-f",
+            "wav",
+            "-o",
+            str(tmp_path / "parallel"),
+            "--parallel",
+            "--seed",
+            "42",
+            "--no-banner",
+        ]
+    )
+    files = list((tmp_path / "parallel").iterdir())
+    assert len(files) == 6
+
+
 def test_cli_generates_files(tmp_path: Path) -> None:
     output_dir = tmp_path / "output"
     main(

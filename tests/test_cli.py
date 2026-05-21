@@ -118,6 +118,30 @@ class TestParseArgs:
         args = parse_args(["--dry-run"])
         assert args.dry_run
 
+    def test_format_aiff(self) -> None:
+        args = parse_args(["-f", "aiff"])
+        assert args.format == "aiff"
+
+    def test_format_raw(self) -> None:
+        args = parse_args(["-f", "raw"])
+        assert args.format == "raw"
+
+    def test_loop(self) -> None:
+        args = parse_args(["--loop"])
+        assert args.loop
+
+    def test_continuous(self) -> None:
+        args = parse_args(["--continuous"])
+        assert args.continuous
+
+    def test_parallel(self) -> None:
+        args = parse_args(["--parallel"])
+        assert args.parallel
+
+    def test_workers(self) -> None:
+        args = parse_args(["--workers", "4"])
+        assert args.workers == 4
+
     def test_invalid_noise_type(self) -> None:
         with pytest.raises(SystemExit):
             parse_args(["--type", "green"])
