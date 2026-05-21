@@ -230,6 +230,10 @@ class TestParseArgs:
         args = parse_args(["--progress", "none"])
         assert args.progress == "none"
 
+    def test_doctor(self) -> None:
+        args = parse_args(["--doctor"])
+        assert args.doctor
+
 
 def test_config_load_json(tmp_path: Path) -> None:
     config_file = tmp_path / "config.json"

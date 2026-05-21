@@ -11,7 +11,7 @@ import numpy as np
 
 from noise import __version__
 from noise.analysis import ascii_spectrum, compute_stats, save_json_stats
-from noise.completion import SHELL_COMPLETION_SCRIPT, add_completion_args
+from noise.completion import SHELL_COMPLETION_SCRIPT
 from noise.config import generate_example_config, load_config
 from noise.effects import (
     apply_envelope,
@@ -93,15 +93,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  noisetool                           Generate all noise types (defaults)\n"
-            "  noisetool --type white --mono       Generate white noise, mono only\n"
-            "  noisetool --type pink --duration 60 --sample-rate 96000\n"
-            "  noisetool --type brown --lufs -23   Normalize to broadcast loudness\n"
-            "  noisetool --type all --seed 42      Reproducible output\n"
+            "  noisetool                           Interactive wizard (default)\n"
+            "  noisetool --type pink --lufs -14    Generate pink noise, streaming loudness\n"
+            "  noisetool --type all --parallel     Generate all types in parallel\n"
+            "  noisetool --mix pink=0.7,white=0.3  Custom blend\n"
+            "  noisetool --info file.wav           Analyze existing audio\n"
         ),
     )
 
-    parser.add_argument(
+    basic = parser.add_argument_group("Noise Generation")
+    basic.add_argument(
         "-t",
         "--type",
         type=str,
@@ -109,38 +110,47 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=["all", "white", "pink", "brown", "blue", "violet", "grey"],
         help="Noise type to generate (default: all)",
     )
-
-    parser.add_argument(
+    basic.add_argument(
         "-d",
         "--duration",
         type=float,
         default=30.0,
         help="Duration in seconds (default: 30)",
     )
-
-    parser.add_argument(
+    basic.add_argument(
         "-r",
         "--sample-rate",
         type=int,
         default=SAMPLE_RATE,
         help=f"Sample rate in Hz (default: {SAMPLE_RATE})",
     )
-
-    parser.add_argument(
+    basic.add_argument(
         "--mono",
         action="store_true",
         default=False,
         help="Generate mono audio only",
     )
-
-    parser.add_argument(
+    basic.add_argument(
         "--stereo",
         action="store_true",
         default=False,
         help="Generate stereo audio only",
     )
-
-    parser.add_argument(
+    basic.add_argument(
+        "--mix",
+        type=str,
+        default=None,
+        metavar="TYPE1=WEIGHT,TYPE2=WEIGHT,...",
+        help="Mix multiple noise types with weights (e.g., pink=0.7,white=0.3)",
+    )
+    basic.add_argument(
+        "--pattern",
+        type=str,
+        default=None,
+        metavar="TEMPLATE",
+        help="Custom filename pattern. Variables: {type}, {channels}, {format}, {sr}, {bits}, {seed}",
+    )
+    basic.add_argument(
         "-o",
         "--output-dir",
         type=Path,
@@ -148,90 +158,247 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Output directory (default: audio/)",
     )
 
-    parser.add_argument(
+    audio = parser.add_argument_group("Audio Format")
+    audio.add_argument(
         "-f",
         "--format",
         type=str,
         default="all",
-        choices=["all", "wav", "flac", "aiff", "raw", "ogg"],
+        choices=["all", "wav", "flac", "aiff", "ogg", "raw"],
         help="Output format (default: both wav and flac)",
     )
-
-    parser.add_argument(
+    audio.add_argument(
         "--bit-depth",
         type=int,
         default=24,
         choices=[16, 24, 32],
         help="Bit depth for audio files (default: 24)",
     )
+    audio.add_argument(
+        "--loop",
+        action="store_true",
+        default=False,
+        help="Generate seamless looping noise (cross-fade start/end to avoid clicks)",
+    )
 
-    parser.add_argument(
+    loudness = parser.add_argument_group("Loudness & Level")
+    loudness.add_argument(
         "--lufs",
         type=float,
         default=None,
         metavar="TARGET",
-        help="Target loudness in LUFS for normalization (e.g., -14 for streaming, -23 for broadcast)",
+        help="Target loudness in LUFS (e.g., -14 for streaming, -23 for broadcast)",
     )
-
-    parser.add_argument(
-        "--measure",
-        action="store_true",
-        default=False,
-        help="Measure and display loudness of generated audio without saving",
-    )
-
-    parser.add_argument(
+    loudness.add_argument(
         "--peak",
         type=float,
         default=None,
         metavar="LEVEL",
         help="Peak normalize to target level in dB (e.g., -1.0 to prevent clipping)",
     )
-
-    parser.add_argument(
-        "--seed",
-        type=int,
+    loudness.add_argument(
+        "--rms",
+        type=float,
         default=None,
-        help="Random seed for reproducible generation",
+        metavar="DBFS",
+        help="RMS-normalize to target level in dBFS (e.g., -18)",
     )
-
-    parser.add_argument(
-        "--benchmark",
+    loudness.add_argument(
+        "--measure",
         action="store_true",
         default=False,
-        help="Run performance benchmark of all noise generators and exit",
+        help="Measure and display loudness of generated audio without saving",
     )
 
-    parser.add_argument(
+    effects = parser.add_argument_group("Effects & Processing")
+    effects.add_argument(
+        "--dc-block",
+        action="store_true",
+        default=False,
+        help="Remove DC offset",
+    )
+    effects.add_argument(
+        "--fade-in",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help="Linear fade-in at start",
+    )
+    effects.add_argument(
+        "--fade-out",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help="Linear fade-out at end",
+    )
+    effects.add_argument(
+        "--reverse",
+        action="store_true",
+        default=False,
+        help="Reverse audio in time",
+    )
+    effects.add_argument(
+        "--invert",
+        action="store_true",
+        default=False,
+        help="Invert phase (multiply by -1)",
+    )
+    effects.add_argument(
+        "--lowpass",
+        type=float,
+        default=None,
+        metavar="HZ",
+        help="Low-pass filter cutoff frequency",
+    )
+    effects.add_argument(
+        "--highpass",
+        type=float,
+        default=None,
+        metavar="HZ",
+        help="High-pass filter cutoff frequency",
+    )
+    effects.add_argument(
+        "--bandpass",
+        type=str,
+        default=None,
+        metavar="LOW,HIGH",
+        help="Band-pass filter (e.g., 20,20000)",
+    )
+    effects.add_argument(
+        "--envelope",
+        type=str,
+        default=None,
+        metavar="A,D,S,R",
+        help="ADSR envelope (e.g., 0.1,0.2,0.7,0.3)",
+    )
+    effects.add_argument(
+        "--width",
+        type=float,
+        default=None,
+        metavar="WIDTH",
+        help="Stereo width (0=mono, 1=original, >1=wider)",
+    )
+    effects.add_argument(
+        "--pan",
+        type=float,
+        default=None,
+        metavar="PAN",
+        help="Pan position (-1=left, 0=center, 1=right)",
+    )
+    effects.add_argument(
+        "--tremolo",
+        type=str,
+        default=None,
+        metavar="RATE,DEPTH",
+        help="Amplitude modulation (e.g., 5,0.5)",
+    )
+    effects.add_argument(
+        "--bitcrush",
+        type=int,
+        default=None,
+        metavar="BITS",
+        help="Bitcrushing (1-24 bits)",
+    )
+    effects.add_argument(
+        "--dither",
+        type=int,
+        default=None,
+        metavar="BITS",
+        help="Dithering for target bit depth (e.g., 16)",
+    )
+    effects.add_argument(
+        "--compressor",
+        type=str,
+        default=None,
+        metavar="THRESH,RATIO",
+        help="Dynamic range compression (e.g., -20,4)",
+    )
+
+    output = parser.add_argument_group("Output & Analysis")
+    output.add_argument(
+        "--preview",
+        action="store_true",
+        default=False,
+        help="Show ASCII waveform preview",
+    )
+    output.add_argument(
+        "--spectrum",
+        action="store_true",
+        default=False,
+        help="Show ASCII frequency spectrum",
+    )
+    output.add_argument(
+        "--eq-viz",
+        action="store_true",
+        default=False,
+        help="Show EQ filter response plot",
+    )
+    output.add_argument(
+        "--stats",
+        action="store_true",
+        default=False,
+        help="Show detailed audio statistics",
+    )
+    output.add_argument(
+        "--json",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="Save audio statistics as JSON",
+    )
+    output.add_argument(
+        "--play",
+        action="store_true",
+        default=False,
+        help="Play audio through system output (requires sounddevice)",
+    )
+    output.add_argument(
+        "--info",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="Show detailed info about an existing audio file",
+    )
+    output.add_argument(
         "--list",
         action="store_true",
         default=False,
         help="List available noise types with descriptions and exit",
     )
-
-    parser.add_argument(
-        "--version",
-        action="version",
-        version=f"noisetool {__version__}",
-    )
-
-    parser.add_argument(
-        "-v",
-        "--verbose",
+    output.add_argument(
+        "--benchmark",
         action="store_true",
         default=False,
-        help="Enable verbose / debug output",
+        help="Run performance benchmark of all noise generators and exit",
+    )
+    output.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Show what would be generated without creating files",
     )
 
-    parser.add_argument(
-        "--log-file",
-        type=Path,
+    mode = parser.add_argument_group("Operation Mode")
+    mode.add_argument(
+        "--parallel",
+        action="store_true",
+        default=False,
+        help="Generate files in parallel using multiple threads",
+    )
+    mode.add_argument(
+        "--workers",
+        type=int,
         default=None,
-        metavar="FILE",
-        help="Write log output to a file in addition to stderr",
+        metavar="N",
+        help="Number of worker threads for parallel generation (default: CPU count)",
     )
-
-    parser.add_argument(
+    mode.add_argument(
+        "--continuous",
+        action="store_true",
+        default=False,
+        help="Generate noise continuously until interrupted",
+    )
+    mode.add_argument(
         "-i",
         "--interactive",
         action="store_true",
@@ -239,278 +406,87 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Run in interactive wizard mode",
     )
 
-    parser.add_argument(
-        "--no-banner",
-        action="store_true",
-        default=False,
-        help="Suppress the startup banner",
-    )
-
-    parser.add_argument(
+    config_grp = parser.add_argument_group("Configuration")
+    config_grp.add_argument(
         "--config",
         type=Path,
         default=None,
         metavar="FILE",
         help="Load generation config from JSON or YAML file",
     )
-    parser.add_argument(
+    config_grp.add_argument(
         "--example-config",
         type=Path,
         default=None,
         metavar="FILE",
         help="Write an example config file and exit",
     )
-    parser.add_argument(
+    config_grp.add_argument(
+        "--generate-completion",
+        type=str,
+        default=None,
+        metavar="SHELL",
+        choices=["bash", "zsh", "fish"],
+        help="Generate shell completion script for the specified shell",
+    )
+    config_grp.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Random seed for reproducible generation",
+    )
+    config_grp.add_argument(
+        "--seeds",
+        type=str,
+        default=None,
+        metavar="SEEDS",
+        help="Generate with multiple seeds (comma-separated)",
+    )
+
+    logging_grp = parser.add_argument_group("Logging & Display")
+    logging_grp.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        default=False,
+        help="Enable verbose / debug output",
+    )
+    logging_grp.add_argument(
         "--silent",
         action="store_true",
         default=False,
         help="Suppress all terminal output except errors",
     )
-
-    parser.add_argument(
+    logging_grp.add_argument(
         "--progress",
         type=str,
         default="rich",
         choices=["rich", "simple", "none"],
         help="Progress display style (default: rich)",
     )
-
-    add_completion_args(parser)
-
-    parser.add_argument(
-        "--mix",
-        type=str,
-        default=None,
-        metavar="TYPE1=WEIGHT,TYPE2=WEIGHT,...",
-        help="Mix multiple noise types with weights (e.g., pink=0.7,white=0.3)",
-    )
-
-    parser.add_argument(
-        "--pattern",
-        type=str,
-        default=None,
-        metavar="TEMPLATE",
-        help="Custom filename pattern. Variables: {type}, {channels}, {format}, {sr}, {bits}, {seed}",
-    )
-
-    parser.add_argument(
-        "--seeds",
-        type=str,
-        default=None,
-        metavar="SEEDS",
-        help="Generate with multiple seeds (comma-separated). E.g., 1,2,3,42,100",
-    )
-
-    parser.add_argument(
-        "--preview",
-        action="store_true",
-        default=False,
-        help="Show ASCII waveform preview of generated audio",
-    )
-
-    parser.add_argument(
-        "--play",
-        action="store_true",
-        default=False,
-        help="Play generated audio through system audio output",
-    )
-
-    parser.add_argument(
-        "--dc-block",
-        action="store_true",
-        default=False,
-        help="Apply DC offset removal filter",
-    )
-
-    parser.add_argument(
-        "--fade-in",
-        type=float,
-        default=None,
-        metavar="SECONDS",
-        help="Apply linear fade-in at start (duration in seconds)",
-    )
-
-    parser.add_argument(
-        "--fade-out",
-        type=float,
-        default=None,
-        metavar="SECONDS",
-        help="Apply linear fade-out at end (duration in seconds)",
-    )
-
-    parser.add_argument(
-        "--reverse",
-        action="store_true",
-        default=False,
-        help="Reverse audio in time",
-    )
-
-    parser.add_argument(
-        "--invert",
-        action="store_true",
-        default=False,
-        help="Invert audio phase (multiply by -1)",
-    )
-
-    parser.add_argument(
-        "--lowpass",
-        type=float,
-        default=None,
-        metavar="HZ",
-        help="Apply low-pass filter with cutoff frequency in Hz",
-    )
-
-    parser.add_argument(
-        "--highpass",
-        type=float,
-        default=None,
-        metavar="HZ",
-        help="Apply high-pass filter with cutoff frequency in Hz",
-    )
-
-    parser.add_argument(
-        "--bandpass",
-        type=str,
-        default=None,
-        metavar="LOW,HIGH",
-        help="Apply band-pass filter (e.g., 20,20000)",
-    )
-
-    parser.add_argument(
-        "--envelope",
-        type=str,
-        default=None,
-        metavar="A,D,S,R",
-        help="Apply ADSR envelope (e.g., 0.1,0.2,0.7,0.3 for attack,decay,sustain,release)",
-    )
-
-    parser.add_argument(
-        "--width",
-        type=float,
-        default=None,
-        metavar="WIDTH",
-        help="Stereo width (0.0=mono, 1.0=original, >1.0=wider). Stereo only.",
-    )
-
-    parser.add_argument(
-        "--pan",
-        type=float,
-        default=None,
-        metavar="PAN",
-        help="Pan position (-1.0=left, 0.0=center, 1.0=right)",
-    )
-
-    parser.add_argument(
-        "--tremolo",
-        type=str,
-        default=None,
-        metavar="RATE,DEPTH",
-        help="Amplitude modulation (tremolo). E.g., 5,0.5",
-    )
-
-    parser.add_argument(
-        "--info",
+    logging_grp.add_argument(
+        "--log-file",
         type=Path,
         default=None,
         metavar="FILE",
-        help="Show detailed info about an existing audio file",
+        help="Write log output to a file in addition to stderr",
     )
-
-    parser.add_argument(
-        "--bitcrush",
-        type=int,
-        default=None,
-        metavar="BITS",
-        help="Bitcrushing (1-24 bits). Lower = more lo-fi.",
-    )
-
-    parser.add_argument(
-        "--dither",
-        type=int,
-        default=None,
-        metavar="BITS",
-        help="Apply dithering for target bit depth (e.g., 16)",
-    )
-
-    parser.add_argument(
-        "--compressor",
-        type=str,
-        default=None,
-        metavar="THRESH,RATIO",
-        help="Apply dynamic range compression (e.g., -20,4)",
-    )
-
-    parser.add_argument(
-        "--rms",
-        type=float,
-        default=None,
-        metavar="DBFS",
-        help="RMS-normalize to target level in dBFS (e.g., -18)",
-    )
-
-    parser.add_argument(
-        "--stats",
+    logging_grp.add_argument(
+        "--no-banner",
         action="store_true",
         default=False,
-        help="Show detailed audio statistics after generation",
+        help="Suppress the startup banner",
     )
-
-    parser.add_argument(
-        "--eq-viz",
+    logging_grp.add_argument(
+        "--doctor",
         action="store_true",
         default=False,
-        help="Show EQ frequency response plot when using filters",
+        help="Run system diagnostics and exit",
     )
-
-    parser.add_argument(
-        "--spectrum",
-        action="store_true",
-        default=False,
-        help="Show ASCII frequency spectrum visualization",
-    )
-
-    parser.add_argument(
-        "--json",
-        type=Path,
-        default=None,
-        metavar="FILE",
-        help="Save audio statistics as JSON file",
-    )
-
-    parser.add_argument(
-        "--parallel",
-        action="store_true",
-        default=False,
-        help="Generate files in parallel using multiple threads",
-    )
-
-    parser.add_argument(
-        "--workers",
-        type=int,
-        default=None,
-        metavar="N",
-        help="Number of worker threads for parallel generation (default: CPU count)",
-    )
-
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        default=False,
-        help="Show what would be generated without creating files",
-    )
-
-    parser.add_argument(
-        "--loop",
-        action="store_true",
-        default=False,
-        help="Generate seamless looping noise (cross-fade start/end to avoid clicks)",
-    )
-
-    parser.add_argument(
-        "--continuous",
-        action="store_true",
-        default=False,
-        help="Generate noise continuously until interrupted (writes sequential files)",
+    logging_grp.add_argument(
+        "--version",
+        action="version",
+        version=f"noisetool {__version__}",
     )
 
     return parser.parse_args(argv)
@@ -675,6 +651,89 @@ def _run_benchmark(n_samples: int = 441000, sample_rate: int = 44100) -> None:
     console.print("[dim]Higher real-time ratio = faster than real-time[/]")
 
 
+def _run_doctor() -> None:
+    """Run system diagnostics and display capabilities."""
+    import platform
+
+    from rich.table import Table
+
+    from noise.ui import console
+
+    table = Table(title="noisetool Diagnostics", border_style="cyan")
+    table.add_column("Check", style="cyan")
+    table.add_column("Status", style="yellow")
+
+    table.add_row("Python", platform.python_version())
+    table.add_row("Platform", platform.platform())
+
+    # Check numpy
+    try:
+        import numpy as np
+
+        table.add_row("NumPy", np.__version__)
+    except Exception:
+        table.add_row("NumPy", "[red]not found[/]")
+
+    # Check soundfile
+    try:
+        import soundfile as sf
+
+        table.add_row("SoundFile", sf.__version__)
+        # Check available formats
+        try:
+            formats = sf.available_formats()
+            fmt_list = ", ".join(sorted(formats.keys())[:10])
+            table.add_row("Audio Formats", fmt_list)
+        except Exception:
+            table.add_row("Audio Formats", "available")
+    except Exception:
+        table.add_row("SoundFile", "[red]not found[/]")
+
+    # Check rich
+    try:
+        import rich
+
+        table.add_row("Rich", rich.__version__)  # type: ignore[attr-defined]
+    except Exception:
+        table.add_row("Rich", "[red]not found[/]")
+
+    # Check sounddevice
+    try:
+        import sounddevice as sd
+
+        table.add_row("SoundDevice", sd.__version__)
+        devices = sd.query_devices()
+        output_devices = [d["name"] for d in devices if d["max_output_channels"] > 0]
+        if output_devices:
+            table.add_row("Audio Output", output_devices[0][:50])
+        else:
+            table.add_row("Audio Output", "[yellow]none found[/]")
+    except Exception:
+        table.add_row("Audio Output", "[yellow]optional (--play)[/]")
+
+    # Check PyYAML
+    try:
+        import yaml
+
+        table.add_row("PyYAML", yaml.__version__)
+    except Exception:
+        table.add_row("PyYAML", "[yellow]optional (YAML config)[/]")
+
+    # Check CPU
+    import os
+
+    cpu_count = os.cpu_count() or 0
+    table.add_row("CPU Cores", str(cpu_count))
+
+    # Check disk
+    import shutil
+
+    total, used, free = shutil.disk_usage(".")
+    table.add_row("Disk Free", f"{free // (2**30)} GB")
+
+    console.print(table)
+
+
 def _run_continuous_wizard(
     output_dir: Path,
     noise_types: list[str],
@@ -785,6 +844,10 @@ def _main(argv: list[str] | None = None) -> None:
         return
 
     args = parse_args(argv)
+
+    if args.doctor:
+        _run_doctor()
+        return
 
     if args.silent:
         import logging as _logging
