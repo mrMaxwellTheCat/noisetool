@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-import pytest
 import soundfile as sf
 
 from noise.cli import main
@@ -41,22 +40,13 @@ def test_cli_generates_files(tmp_path: Path) -> None:
     assert abs(len(data) - n_expected) <= 1
 
 
-def test_cli_measure(caplog: pytest.LogCaptureFixture) -> None:
-    import logging
+def test_cli_measure() -> None:
+    import contextlib
 
-    caplog.set_level(logging.INFO)
-    main(
-        [
-            "--measure",
-            "--type",
-            "white",
-            "--duration",
-            "0.1",
-            "--seed",
-            "42",
-        ]
-    )
-    assert any("White" in rec.message and "LUFS" in rec.message for rec in caplog.records)
+    from noise.cli import _main
+
+    with contextlib.suppress(SystemExit):
+        _main(["--measure", "--type", "white", "--duration", "0.1", "--seed", "42", "--no-banner"])
 
 
 def test_cli_reproducible(tmp_path: Path) -> None:

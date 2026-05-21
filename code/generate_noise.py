@@ -16,8 +16,8 @@ See README.md for full documentation.
 from __future__ import annotations
 
 import warnings
+from collections.abc import Callable
 from pathlib import Path
-from typing import Dict, Callable
 
 import numpy as np
 import soundfile as sf
@@ -64,7 +64,7 @@ def generate_brown_noise(n_samples: int, n_channels: int = 2) -> np.ndarray:
 
 
 def save_wav(path: Path, data: np.ndarray, bit_depth: int = 24) -> None:
-    subtype_map: Dict[int, str] = {16: "PCM_16", 24: "PCM_24", 32: "PCM_32"}
+    subtype_map: dict[int, str] = {16: "PCM_16", 24: "PCM_24", 32: "PCM_32"}
     sf.write(str(path), data, SAMPLE_RATE, subtype=subtype_map.get(bit_depth, "PCM_24"))
 
 
@@ -74,7 +74,7 @@ def save_flac(path: Path, data: np.ndarray, bit_depth: int = 24) -> None:
 
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    noises: Dict[str, Callable[[int, int], np.ndarray]] = {
+    noises: dict[str, Callable[[int, int], np.ndarray]] = {
         "brown": generate_brown_noise,
         "white": generate_white_noise,
         "pink": generate_pink_noise,

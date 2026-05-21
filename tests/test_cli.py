@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from noise.cli import parse_args
+from noise.config import generate_example_config, load_config
 
 
 class TestParseArgs:
@@ -93,6 +94,34 @@ class TestParseArgs:
         args = parse_args(["--log-file", "/tmp/noise.log"])
         assert args.log_file == Path("/tmp/noise.log")
 
+    def test_preview(self) -> None:
+        args = parse_args(["--preview"])
+        assert args.preview
+
+    def test_play(self) -> None:
+        args = parse_args(["--play"])
+        assert args.play
+
     def test_invalid_noise_type(self) -> None:
         with pytest.raises(SystemExit):
             parse_args(["--type", "green"])
+
+
+def test_config_load_json(tmp_path: Path) -> None:
+    config_file = tmp_path / "config.json"
+    generate_example_config(config_file)
+    assert config_file.exists()
+    config = load_config(config_file)
+    assert config.noise_type == "all"
+    assert config.duration == 30.0
+    assert config.sample_rate == 44100
+    assert config.bit_depth == 24
+    assert config.lufs == -14.0
+    assert config.seed == 42
+
+
+def test_generate_completion() -> None:
+    from noise.completion import SHELL_COMPLETION_SCRIPT
+
+    assert "_noisetool_completion" in SHELL_COMPLETION_SCRIPT
+    assert "noisetool" in SHELL_COMPLETION_SCRIPT
