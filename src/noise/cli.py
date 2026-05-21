@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 
 from noise import __version__
-from noise.analysis import ascii_spectrum, compute_stats, save_json_stats
+from noise.analysis import ascii_spectrum, compute_stats, save_csv_stats, save_json_stats
 from noise.completion import SHELL_COMPLETION_SCRIPT
 from noise.config import generate_example_config, load_config
 from noise.effects import (
@@ -58,6 +58,50 @@ from noise.ui import (
 from noise.utils import SAMPLE_RATE, save_flac, save_wav
 
 logger = logging.getLogger("noisetool")
+
+PRESETS: dict[str, dict[str, Any]] = {
+    "streaming": {
+        "type": "all",
+        "duration": 30,
+        "sample_rate": 48000,
+        "bit_depth": 24,
+        "lufs": -14.0,
+        "format": "all",
+    },
+    "broadcast": {
+        "type": "all",
+        "duration": 30,
+        "sample_rate": 48000,
+        "bit_depth": 24,
+        "lufs": -23.0,
+        "format": "all",
+    },
+    "podcast": {
+        "type": "pink",
+        "duration": 10,
+        "sample_rate": 44100,
+        "bit_depth": 16,
+        "lufs": -16.0,
+        "format": "wav",
+        "mono": True,
+    },
+    "quick": {
+        "type": "pink",
+        "duration": 5,
+        "sample_rate": 44100,
+        "bit_depth": 16,
+        "mono": True,
+        "format": "wav",
+    },
+    "loop": {
+        "type": "pink",
+        "duration": 10,
+        "sample_rate": 44100,
+        "bit_depth": 24,
+        "loop": True,
+        "format": "flac",
+    },
+}
 
 NOISE_GENERATORS = {
     "white": generate_white_noise,
@@ -347,6 +391,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Save audio statistics as JSON",
     )
     output.add_argument(
+        "--csv",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="Save audio statistics as CSV",
+    )
+    output.add_argument(
         "--play",
         action="store_true",
         default=False,
@@ -476,6 +527,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         default=False,
         help="Suppress the startup banner",
+    )
+    logging_grp.add_argument(
+        "--preset",
+        type=str,
+        default=None,
+        metavar="NAME",
+        choices=list(PRESETS.keys()),
+        help="Apply a preset configuration: " + ", ".join(f"{k}" for k in PRESETS),
     )
     logging_grp.add_argument(
         "--doctor",
@@ -691,9 +750,9 @@ def _run_doctor() -> None:
 
     # Check rich
     try:
-        import rich
+        import rich  # noqa: F401
 
-        table.add_row("Rich", rich.__version__)  # type: ignore[attr-defined]
+        table.add_row("Rich", "available")
     except Exception:
         table.add_row("Rich", "[red]not found[/]")
 
@@ -844,6 +903,11 @@ def _main(argv: list[str] | None = None) -> None:
         return
 
     args = parse_args(argv)
+
+    if args.preset is not None:
+        preset = PRESETS[args.preset]
+        for key, value in preset.items():
+            setattr(args, key, value)
 
     if args.doctor:
         _run_doctor()
@@ -1189,6 +1253,11 @@ def _main(argv: list[str] | None = None) -> None:
                         json_path = Path(args.json)
                         save_json_stats(data, sample_rate, json_path)
                         print_success(f"Statistics saved to {json_path}")
+
+                    if args.csv is not None:
+                        csv_path = Path(args.csv)
+                        save_csv_stats(data, sample_rate, csv_path)
+                        print_success(f"Statistics saved to {csv_path}")
 
                     for fmt in format_configs:
                         if args.pattern:

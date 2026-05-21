@@ -230,6 +230,21 @@ class TestParseArgs:
         args = parse_args(["--progress", "none"])
         assert args.progress == "none"
 
+    def test_preset(self) -> None:
+        args = parse_args(["--preset", "streaming"])
+        assert args.preset == "streaming"
+
+    def test_preset_invalid(self) -> None:
+        try:
+            parse_args(["--preset", "invalid"])
+            raise AssertionError("should have raised")
+        except SystemExit:
+            pass
+
+    def test_csv(self) -> None:
+        args = parse_args(["--csv", "stats.csv"])
+        assert args.csv == Path("stats.csv")
+
     def test_doctor(self) -> None:
         args = parse_args(["--doctor"])
         assert args.doctor

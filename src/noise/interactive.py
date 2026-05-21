@@ -87,9 +87,10 @@ def run_wizard() -> dict[str, Any]:
     if raw.strip().lower() == "all":
         config["noise_types"] = [v[0] for v in NOISE_PRESETS.values()]
     else:
-        config["noise_types"] = [
+        selected = [
             NOISE_PRESETS[s.strip()][0] for s in raw.split(",") if s.strip() in NOISE_PRESETS
         ]
+        config["noise_types"] = selected if selected else [v[0] for v in NOISE_PRESETS.values()]
 
     # --- Channels ---
     console.print(f"[dim]{sep}[/]")

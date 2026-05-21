@@ -28,6 +28,16 @@ class AudioStats:
     def to_json(self, indent: int = 2) -> str:
         return json.dumps(self.to_dict(), indent=indent)
 
+    def to_csv(self, delimiter: str = ",") -> str:
+        """Export stats as CSV string."""
+        import io
+
+        buf = io.StringIO()
+        buf.write(delimiter.join(["property", "value"]) + "\n")
+        for prop, val in self.to_table():
+            buf.write(delimiter.join([prop, val]) + "\n")
+        return buf.getvalue()
+
     def to_table(self) -> list[tuple[str, str]]:
         return [
             ("Duration", f"{self.duration_s:.2f}s"),
@@ -140,6 +150,19 @@ def ascii_spectrum(data: np.ndarray, sample_rate: int, width: int = 60, height: 
                         lines[0][pos + j] = ch
 
     return "\n".join("".join(line) for line in lines)
+
+
+def save_csv_stats(data: np.ndarray, sample_rate: int, path: Path) -> Path:
+    """Compute stats and save as CSV."""
+    import csv
+
+    stats = compute_stats(data, sample_rate)
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["property", "value"])
+        for prop, val in stats.to_table():
+            writer.writerow([prop, val])
+    return path
 
 
 def save_json_stats(data: np.ndarray, sample_rate: int, path: Path) -> Path:

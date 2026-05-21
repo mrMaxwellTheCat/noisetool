@@ -29,6 +29,32 @@ class TestComputeStats:
         assert len(table) == 11
         assert table[0][0] == "Duration"
 
+    def test_to_csv(self) -> None:
+        import csv
+        import io
+
+        data = np.random.rand(100, 1).astype(np.float32)
+        stats = compute_stats(data, 100)
+        csv_str = stats.to_csv()
+        reader = csv.DictReader(io.StringIO(csv_str))
+        rows = list(reader)
+        assert len(rows) == 11
+        assert rows[0]["property"] == "Duration"
+
+    def test_save_csv_stats(self, tmp_path: Path) -> None:
+        import csv
+
+        from noise.analysis import save_csv_stats
+
+        data = np.random.rand(1000, 2).astype(np.float32)
+        path = tmp_path / "stats.csv"
+        result = save_csv_stats(data, 44100, path)
+        assert result.exists()
+        with open(result) as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+        assert len(rows) == 12  # header + 11 stats
+
     def test_to_json(self) -> None:
         data = np.random.rand(100, 1).astype(np.float32)
         stats = compute_stats(data, 100)
