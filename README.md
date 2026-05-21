@@ -8,16 +8,21 @@ Generates high-quality **white noise**, **pink noise**, and **brown noise** audi
 
 | Archivo | Tipo | Canales |
 |---|---|---|
-| `white_noise.wav` / `white_noise.flac` | White noise | Estéreo |
-| `white_noise_mono.wav` / `white_noise_mono.flac` | White noise | Mono |
-| `pink_noise.wav` / `pink_noise.flac` | Pink noise (1/f) | Estéreo |
-| `pink_noise_mono.wav` / `pink_noise_mono.flac` | Pink noise (1/f) | Mono |
-| `brown_noise.wav` / `brown_noise.flac` | Brown noise (1/f²) | Estéreo |
-| `brown_noise_mono.wav` / `brown_noise_mono.flac` | Brown noise (1/f²) | Mono |
+Todos los archivos de audio se encuentran en la subcarpeta `audio/`.
+
+| Archivo | Tipo | Canales |
+|---|---|---|
+| `audio/white_noise.wav` / `audio/white_noise.flac` | White noise | Estéreo |
+| `audio/white_noise_mono.wav` / `audio/white_noise_mono.flac` | White noise | Mono |
+| `audio/pink_noise.wav` / `audio/pink_noise.flac` | Pink noise (1/f) | Estéreo |
+| `audio/pink_noise_mono.wav` / `audio/pink_noise_mono.flac` | Pink noise (1/f) | Mono |
+| `audio/brown_noise.wav` / `audio/brown_noise.flac` | Brown noise (1/f²) | Estéreo |
+| `audio/brown_noise_mono.wav` / `audio/brown_noise_mono.flac` | Brown noise (1/f²) | Mono |
 
 ### Código
 
 - `code/generate_noise.py` — Script de generación programática.
+- `requirements.txt` — Dependencias de Python.
 
 ## Algoritmos
 
@@ -35,7 +40,7 @@ Generates high-quality **white noise**, **pink noise**, and **brown noise** audi
 Instalación:
 
 ```bash
-pip install numpy scipy soundfile
+pip install -r requirements.txt
 ```
 
 ## Regenerar
@@ -44,4 +49,4 @@ pip install numpy scipy soundfile
 python3 code/generate_noise.py
 ```
 
-Los archivos se generan en el directorio raíz del proyecto.
+Los archivos se generan en la carpeta `audio/`.
