@@ -4,6 +4,9 @@ __pycache__/
 .venv/
 venv/
 .env
+*.egg-info/
+dist/
+build/
 
 # Generated audio files
 audio/
