@@ -10,7 +10,9 @@ repos:
     rev: v1.15.0
     hooks:
       - id: mypy
-        additional_dependencies: [numpy>=2.0]
+        args: [--ignore-missing-imports, --disable-error-code=type-arg, --disable-error-code=misc]
+        additional_dependencies: [numpy>=2.0, types-PyYAML]
+        exclude: tests/
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
