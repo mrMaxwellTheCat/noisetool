@@ -5,6 +5,7 @@ from noise.generator import (
     generate_pink_noise,
     generate_violet_noise,
     generate_white_noise,
+    mix_noise,
 )
 from noise.lufs import (
     measure_loudness,
@@ -25,6 +26,7 @@ __all__ = [
     "generate_blue_noise",
     "generate_violet_noise",
     "generate_grey_noise",
+    "mix_noise",
     "measure_loudness",
     "normalize_loudness",
     "SAMPLE_RATE",
