@@ -260,6 +260,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         metavar="FILE",
         help="Write an example config file and exit",
     )
+    parser.add_argument(
+        "--silent",
+        action="store_true",
+        default=False,
+        help="Suppress all terminal output except errors",
+    )
+
+    parser.add_argument(
+        "--progress",
+        type=str,
+        default="rich",
+        choices=["rich", "simple", "none"],
+        help="Progress display style (default: rich)",
+    )
+
     add_completion_args(parser)
 
     parser.add_argument(
@@ -757,6 +772,17 @@ def _main(argv: list[str] | None = None) -> None:
 
     args = parse_args(argv)
 
+    if args.silent:
+        import logging as _logging
+
+        _logging.disable(_logging.CRITICAL)
+        args.no_banner = True
+        import os as _os
+
+        from noise.ui import console as _console
+
+        _console.file = open(_os.devnull, "w")  # noqa: SIM115
+
     if args.info is not None:
         _show_file_info(args.info)
         return
@@ -972,11 +998,23 @@ def _main(argv: list[str] | None = None) -> None:
             )
         return
 
-    progress = make_progress()
     total_tasks = len(noise_types) * len(channel_configs) * len(format_configs) * len(seeds_to_use)
-    task = progress.add_task("Generating...", total=total_tasks)
 
-    with progress:
+    use_rich_progress = args.progress == "rich" and not args.silent
+    use_simple_progress = args.progress == "simple" and not args.silent
+
+    progress = make_progress() if use_rich_progress else None
+    if progress is not None:
+        task = progress.add_task("Generating...", total=total_tasks)
+        progress.__enter__()
+
+    if use_simple_progress:
+        import sys as _sys
+
+        print(f"Generating {total_tasks} file(s)... ", end="", file=_sys.stderr)
+        _sys.stderr.flush()
+
+    try:
         for noise_type in noise_types:
             for n_channels in channel_configs:
                 for seed_val in seeds_to_use:
@@ -1094,7 +1132,13 @@ def _main(argv: list[str] | None = None) -> None:
                         saver = FORMATS[fmt]
                         saver(filepath, data, sample_rate=sample_rate, bit_depth=args.bit_depth)
                         files_created.append(filepath)
-                        progress.advance(task)
+                        if progress is not None:
+                            progress.advance(task)
+                        if use_simple_progress:
+                            import sys as _sys
+
+                            print(".", end="", file=_sys.stderr)
+                            _sys.stderr.flush()
 
             if args.play:
                 try:
@@ -1114,6 +1158,13 @@ def _main(argv: list[str] | None = None) -> None:
                     f"\n[bold cyan]Waveform:[/] [yellow]{noise_type} noise[/] ({n_channels} ch)"
                 )
                 console.print(wave)
+    finally:
+        if progress is not None:
+            progress.__exit__(None, None, None)
+        if use_simple_progress:
+            import sys as _sys
+
+            print("done.", file=_sys.stderr)
 
     print_results_table(files_created, output_dir)
     print_success(f"Done \u2014 {len(files_created)} file(s) saved to {output_dir}")

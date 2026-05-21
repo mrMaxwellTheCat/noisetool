@@ -214,6 +214,22 @@ class TestParseArgs:
         args = parse_args(["--seeds", "1,2,3,42,100"])
         assert args.seeds == "1,2,3,42,100"
 
+    def test_silent(self) -> None:
+        args = parse_args(["--silent"])
+        assert args.silent
+
+    def test_progress_rich(self) -> None:
+        args = parse_args(["--progress", "rich"])
+        assert args.progress == "rich"
+
+    def test_progress_simple(self) -> None:
+        args = parse_args(["--progress", "simple"])
+        assert args.progress == "simple"
+
+    def test_progress_none(self) -> None:
+        args = parse_args(["--progress", "none"])
+        assert args.progress == "none"
+
 
 def test_config_load_json(tmp_path: Path) -> None:
     config_file = tmp_path / "config.json"
