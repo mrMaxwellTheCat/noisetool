@@ -249,6 +249,10 @@ class TestParseArgs:
         args = parse_args(["--doctor"])
         assert args.doctor
 
+    def test_normalize(self) -> None:
+        args = parse_args(["--normalize", "-14"])
+        assert args.normalize == "-14"
+
 
 def test_config_load_json(tmp_path: Path) -> None:
     config_file = tmp_path / "config.json"

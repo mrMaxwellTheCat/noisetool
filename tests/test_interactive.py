@@ -21,6 +21,12 @@ class TestInteractiveImports:
         assert "config" not in sig.parameters
 
 
+def test_quick_wizard_import() -> None:
+    from noise.interactive import _quick_wizard
+
+    assert callable(_quick_wizard)
+
+
 def test_interactive_flag() -> None:
     from noise.cli import parse_args
 

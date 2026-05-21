@@ -67,8 +67,51 @@ def _noise_table() -> Table:
     return t
 
 
+def _quick_wizard() -> dict[str, Any]:
+    from noise.cli import PRESETS
+
+    console.print("[bold yellow]Quick Setup[/]")
+    names = list(PRESETS.keys())
+    for i, n in enumerate(names, 1):
+        console.print(f"  [dim]{i}.[/] {n}")
+    choice = Prompt.ask(
+        "[yellow]Preset[/]",
+        choices=[str(i) for i in range(1, len(names) + 1)],
+        default="1",
+    )
+    preset_name = names[int(choice) - 1]
+    preset = dict(PRESETS[preset_name])
+    output_dir = Prompt.ask("[yellow]Output folder[/]", default="audio")
+    noise_type = preset.get("type", "all")
+    config: dict[str, Any] = {
+        "noise_types": [v[0] for v in NOISE_PRESETS.values()]
+        if noise_type == "all"
+        else [noise_type],
+        "n_channels": [1] if preset.get("mono") else ([2] if preset.get("stereo") else [1, 2]),
+        "duration": preset.get("duration", 30),
+        "sample_rate": preset.get("sample_rate", 44100),
+        "formats": ["wav", "flac"]
+        if preset.get("format") == "all"
+        else [preset.get("format", "wav")],
+        "quality_value": preset.get("bit_depth", 24),
+        "lufs": preset.get("lufs"),
+        "output_dir": output_dir,
+    }
+    console.print(f"[green]\u2713[/] Preset [bold]{preset_name}[/]")
+    return config
+
+
 def run_wizard() -> dict[str, Any]:
     print_banner()
+
+    console.print()
+    quick = Prompt.ask(
+        "[yellow]Setup mode[/]",
+        choices=["quick", "custom"],
+        default="custom",
+    )
+    if quick == "quick":
+        return _quick_wizard()
 
     config: dict[str, Any] = {}
     sep = "\u2500" * 38

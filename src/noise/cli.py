@@ -241,6 +241,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Peak normalize to target level in dB (e.g., -1.0 to prevent clipping)",
     )
     loudness.add_argument(
+        "--normalize",
+        type=str,
+        default=None,
+        metavar="TARGET",
+        help="Convenience: set loudness target (e.g., -14, -23, -16). Sets --lufs and --peak -1",
+    )
+    loudness.add_argument(
         "--rms",
         type=float,
         default=None,
@@ -903,6 +910,16 @@ def _main(argv: list[str] | None = None) -> None:
         return
 
     args = parse_args(argv)
+
+    if args.normalize is not None:
+        try:
+            target = float(args.normalize)
+            args.lufs = target
+            if args.peak is None:
+                args.peak = -1.0
+        except ValueError:
+            print_error(f"Invalid normalize target: {args.normalize}")
+            sys.exit(1)
 
     if args.preset is not None:
         preset = PRESETS[args.preset]
