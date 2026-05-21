@@ -12,7 +12,7 @@ import numpy as np
 from noise import __version__
 from noise.analysis import ascii_spectrum, compute_stats, save_csv_stats, save_json_stats
 from noise.completion import SHELL_COMPLETION_SCRIPT
-from noise.config import generate_example_config, load_config
+from noise.config import generate_example_config
 from noise.effects import (
     apply_envelope,
     bandpass,
@@ -1083,16 +1083,11 @@ def _main(argv: list[str] | None = None) -> None:
         return
 
     if args.config is not None:
-        config = load_config(args.config)
-        args.type = config.noise_type
-        args.duration = config.duration
-        args.sample_rate = config.sample_rate
-        args.format = "all"
-        args.bit_depth = config.bit_depth
-        args.lufs = config.lufs
-        args.peak = config.peak
-        args.seed = config.seed
-        args.output_dir = Path(config.output_dir)
+        from noise.config import config_to_args, load_config
+
+        cfg = load_config(args.config)
+        for key, value in config_to_args(cfg).items():
+            setattr(args, key, value)
 
     if args.interactive:
         wizard_config = run_wizard()
