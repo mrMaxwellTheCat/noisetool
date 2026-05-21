@@ -18,7 +18,7 @@ class TestParseArgs:
         assert args.sample_rate == 44100
         assert not args.mono
         assert not args.stereo
-        assert args.output_dir == Path("audio")
+        assert args.output_dir == Path(".")
         assert args.format == "all"
         assert args.bit_depth == 24
         assert args.lufs is None

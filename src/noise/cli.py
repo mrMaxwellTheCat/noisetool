@@ -198,7 +198,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "-o",
         "--output-dir",
         type=Path,
-        default=Path("audio"),
+        default=Path("."),
         help="Output directory (default: audio/)",
     )
 
@@ -966,6 +966,12 @@ def _generate_from_wizard(config: dict[str, Any]) -> None:
 
                 if lufs_target is not None:
                     data = lufs_normalize(data, target_lufs=lufs_target, sample_rate=sample_rate)
+
+                if config.get("fade_in"):
+                    data = fade_in(data, config["fade_in"], sample_rate)
+                if config.get("fade_out"):
+                    data = fade_out(data, config["fade_out"], sample_rate)
+
                 suffix = "_mono" if n_channels == 1 else ""
                 for fmt in formats:
                     filename = f"{noise_type}_noise{suffix}.{fmt}"

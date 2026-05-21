@@ -10,3 +10,5 @@ build/
 
 # Generated audio files
 audio/
+*.wav
+*.flac

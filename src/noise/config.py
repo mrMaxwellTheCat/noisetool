@@ -19,7 +19,7 @@ class NoiseConfig:
     rms: float | None = None
     seed: int | None = None
     seeds: str | None = None
-    output_dir: str = "audio"
+    output_dir: str = "."
     mono: bool = False
     stereo: bool = False
     mix: str | None = None
@@ -79,7 +79,7 @@ def load_config(path: Path) -> NoiseConfig:
         rms=raw.get("rms"),
         seed=raw.get("seed"),
         seeds=raw.get("seeds"),
-        output_dir=raw.get("output_dir", "audio"),
+        output_dir=raw.get("output_dir", "."),
         mono=raw.get("mono", False),
         stereo=raw.get("stereo", False),
         mix=raw.get("mix"),
@@ -175,7 +175,7 @@ def generate_example_config(path: Path) -> None:
         "lufs": -14.0,
         "peak": -1.0,
         "seed": 42,
-        "output_dir": "audio",
+        "output_dir": ".",
         "mix": "pink=0.7,white=0.3",
         "loop": False,
         "parallel": False,

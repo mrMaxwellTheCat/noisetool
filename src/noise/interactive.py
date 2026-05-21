@@ -81,7 +81,7 @@ def _quick_wizard() -> dict[str, Any]:
     )
     preset_name = names[int(choice) - 1]
     preset = dict(PRESETS[preset_name])
-    output_dir = Prompt.ask("[yellow]Output folder[/]", default="audio")
+    output_dir = Prompt.ask("[yellow]Output folder[/]", default=".")
     noise_type = preset.get("type", "all")
     config: dict[str, Any] = {
         "noise_types": [v[0] for v in NOISE_PRESETS.values()]
@@ -194,7 +194,21 @@ def run_wizard() -> dict[str, Any]:
 
     # --- Output ---
     console.print(f"[dim]{sep}[/]")
-    config["output_dir"] = Prompt.ask("[yellow]Output folder[/]", default="audio")
+    config["output_dir"] = Prompt.ask("[yellow]Output folder[/]", default=".")
+
+    # --- Fade In/Out ---
+    console.print(f"[dim]{sep}[/]")
+    console.print("[bold yellow]Fades[/]")
+    fade_in = Prompt.ask(
+        "[yellow]Fade-in[/] (seconds, or [i]0[/] for none)",
+        default="0",
+    )
+    config["fade_in"] = float(fade_in) if float(fade_in) > 0 else None
+    fade_out = Prompt.ask(
+        "[yellow]Fade-out[/] (seconds, or [i]0[/] for none)",
+        default="0",
+    )
+    config["fade_out"] = float(fade_out) if float(fade_out) > 0 else None
 
     # --- Summary ---
     console.print()
