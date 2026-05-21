@@ -2,170 +2,163 @@ from __future__ import annotations
 
 from typing import Any
 
-from rich.prompt import Confirm, FloatPrompt, IntPrompt, Prompt
+from rich.prompt import IntPrompt, Prompt
 from rich.table import Table
 
 from noise.ui import console, print_banner
 
+NOISE_PRESETS: dict[str, tuple[str, str]] = {
+    "1": ("white", "Flat"),
+    "2": ("pink", "1/f"),
+    "3": ("brown", "1/f\u00b2"),
+    "4": ("blue", "Rising"),
+    "5": ("violet", "Sharp"),
+    "6": ("grey", "Psychoacoustic"),
+}
+
+FORMAT_PRESETS: dict[str, dict[str, Any]] = {
+    "1": {
+        "label": "WAV",
+        "formats": ["wav"],
+        "default_quality": 24,
+        "quality_label": "Bit depth",
+        "quality_range": "16/24/32",
+    },
+    "2": {
+        "label": "FLAC",
+        "formats": ["flac"],
+        "default_quality": 5,
+        "quality_label": "Compression",
+        "quality_range": "0-8",
+    },
+    "3": {
+        "label": "OGG",
+        "formats": ["ogg"],
+        "default_quality": 5,
+        "quality_label": "Quality",
+        "quality_range": "-1 to 10",
+    },
+    "4": {
+        "label": "MP3",
+        "formats": ["wav"],
+        "default_quality": 256,
+        "quality_label": "Bitrate",
+        "quality_range": "kbps",
+    },
+    "5": {
+        "label": "WAV+FLAC",
+        "formats": ["wav", "flac"],
+        "default_quality": 24,
+        "quality_label": "Bit depth",
+        "quality_range": "16/24/32",
+    },
+}
+
+CHANNEL_PRESETS: dict[str, str] = {"1": "Stereo", "2": "Mono", "3": "Both"}
+
+
+def _noise_table() -> Table:
+    t = Table(box=None, show_header=False, padding=(0, 1))
+    t.add_column("#", style="dim cyan", width=2)
+    t.add_column("Type", style="white", width=8)
+    t.add_column("Desc", style="dim", width=16)
+    for k, (name, desc) in NOISE_PRESETS.items():
+        t.add_row(k, name, desc)
+    return t
+
 
 def run_wizard() -> dict[str, Any]:
-    """Run the interactive configuration wizard.
-
-    Returns a dict of settings suitable for passing to the generation functions.
-    """
     print_banner()
-    console.print()
-    console.print("[bold cyan]Interactive Mode[/]  —  Press [dim]Enter[/] to accept defaults")
-    console.print()
 
     config: dict[str, Any] = {}
+    sep = "\u2500" * 38
 
-    # Noise types
+    console.print()
+    console.print("[bold cyan]noisetool[/] [dim]interactive[/]")
+
+    # --- Noise Types ---
+    console.print(f"[dim]{sep}[/]")
     console.print("[bold yellow]Noise Types[/]")
-    types_table = Table(box=None, show_header=False)
-    types_table.add_column("Key", style="cyan", width=2)
-    types_table.add_column("Type", style="white", width=10)
-    types_table.add_column("Description", style="dim")
-    for i, (name, desc) in enumerate(
-        [
-            ("white", "Flat spectrum"),
-            ("pink", "1/f spectrum"),
-            ("brown", "1/f\u00b2 spectrum"),
-            ("blue", "Rising spectrum"),
-            ("violet", "Steep rising"),
-            ("grey", "Equal loudness"),
-        ],
-        1,
-    ):
-        types_table.add_row(str(i), name, desc)
-    console.print(types_table)
-    selected = Prompt.ask(
-        "[yellow]Types[/] (comma-separated, or [bold]all[/])",
+    console.print(_noise_table())
+    raw = Prompt.ask(
+        "[yellow]Select[/] (numbers/comma, or [i]all[/])",
         default="all",
     )
-    if selected.lower() == "all":
-        config["noise_types"] = ["white", "pink", "brown", "blue", "violet", "grey"]
+    if raw.strip().lower() == "all":
+        config["noise_types"] = [v[0] for v in NOISE_PRESETS.values()]
     else:
-        config["noise_types"] = [t.strip() for t in selected.split(",")]
+        config["noise_types"] = [
+            NOISE_PRESETS[s.strip()][0] for s in raw.split(",") if s.strip() in NOISE_PRESETS
+        ]
 
-    # Channels
-    console.print()
-    channel_choice = Prompt.ask(
-        "[yellow]Channels[/]",
-        choices=["stereo+mono", "stereo", "mono"],
-        default="stereo+mono",
-    )
-    if channel_choice == "stereo":
-        config["n_channels"] = [2]
-    elif channel_choice == "mono":
-        config["n_channels"] = [1]
-    else:
-        config["n_channels"] = [1, 2]
+    # --- Channels ---
+    console.print(f"[dim]{sep}[/]")
+    console.print("[bold yellow]Channels[/]")
+    for k, v in CHANNEL_PRESETS.items():
+        console.print(f"  [dim]{k}.[/] {v}")
+    ch = Prompt.ask("[yellow]Choose[/]", choices=["1", "2", "3"], default="3")
+    config["n_channels"] = {"1": [2], "2": [1], "3": [1, 2]}[ch]
 
-    # Format
-    fmt_choice = Prompt.ask(
-        "[yellow]Format[/]",
-        choices=["wav+flac", "wav", "flac", "ogg", "aiff", "raw"],
-        default="wav+flac",
-    )
-    if fmt_choice == "wav+flac":
-        config["formats"] = ["wav", "flac"]
-    else:
-        config["formats"] = [fmt_choice]
-
-    # Duration
-    config["duration"] = FloatPrompt.ask(
-        "[yellow]Duration[/] (seconds)",
-        default=30.0,
+    # --- Duration ---
+    console.print(f"[dim]{sep}[/]")
+    config["duration"] = IntPrompt.ask(
+        "[yellow]Length[/] (seconds, [dim]0 for continuous[/])",
+        default=30,
     )
 
-    # Sample rate
-    config["sample_rate"] = IntPrompt.ask(
-        "[yellow]Sample rate[/] (Hz)",
-        default=44100,
+    # --- Format ---
+    console.print(f"[dim]{sep}[/]")
+    console.print("[bold yellow]Format[/]")
+    for k, fp in FORMAT_PRESETS.items():
+        console.print(f"  [dim]{k}.[/] {fp['label']:<8} [dim]({fp['quality_range']})[/]")
+    fmt = Prompt.ask("[yellow]Choose[/]", choices=list(FORMAT_PRESETS.keys()), default="5")
+    fp = FORMAT_PRESETS[fmt]
+    config["formats"] = fp["formats"]
+    config["quality_value"] = IntPrompt.ask(
+        f"[yellow]{fp['quality_label']}[/] ({fp['quality_range']})",
+        default=fp["default_quality"],
     )
 
-    # Bit depth
-    config["bit_depth"] = IntPrompt.ask(
-        "[yellow]Bit depth[/]",
-        choices=["16", "24", "32"],
-        default=24,
-    )
-
-    # LUFS normalization
-    console.print()
-    if Confirm.ask("[yellow]Apply LUFS normalization?[/]", default=False):
-        config["lufs"] = FloatPrompt.ask(
-            "  Target LUFS",
-            default=-14.0,
+    # --- Sample Rate ---
+    config["sample_rate"] = int(
+        Prompt.ask(
+            "[yellow]Sample rate[/]",
+            choices=["44100", "48000", "96000", "192000"],
+            default="44100",
         )
-    else:
+    )
+
+    # --- Loudness ---
+    console.print(f"[dim]{sep}[/]")
+    console.print("[bold yellow]Loudness[/]")
+    loud = Prompt.ask(
+        "[yellow]Target[/]",
+        choices=["none", "streaming -14", "broadcast -23", "podcast -16", "custom"],
+        default="streaming -14",
+    )
+    if loud == "none":
         config["lufs"] = None
-
-    # Peak normalize
-    if Confirm.ask("[yellow]Apply peak normalization?[/]", default=False):
-        config["peak"] = FloatPrompt.ask(
-            "  Target peak level (dBFS)",
-            default=-1.0,
-        )
+    elif loud == "custom":
+        config["lufs"] = float(Prompt.ask("  LUFS target", default="-14"))
     else:
-        config["peak"] = None
+        config["lufs"] = float(loud.split()[-1])
 
-    # Seed
-    if Confirm.ask("[yellow]Use fixed seed for reproducibility?[/]", default=False):
-        config["seed"] = IntPrompt.ask("  Seed value", default=42)
-    else:
-        config["seed"] = None
+    # --- Output ---
+    console.print(f"[dim]{sep}[/]")
+    config["output_dir"] = Prompt.ask("[yellow]Output folder[/]", default="audio")
 
-    # Output directory
-    config["output_dir"] = Prompt.ask(
-        "[yellow]Output directory[/]",
-        default="audio",
+    # --- Summary ---
+    console.print()
+    console.print(f"[dim]{sep}[/]")
+    n_types = len(config["noise_types"])
+    ch_map = {1: "mono", 2: "stereo", 3: "both"}
+    ch_label = ch_map.get(len(config["n_channels"]), "both")
+    fmt_label: str = fp["label"]
+    dur_str = f"{config['duration']}s" if config.get("duration") else "continuous"
+    console.print(
+        f"[green]\u2713[/] {n_types} type(s), {ch_label}, {dur_str}, "
+        f"{fmt_label}, {config['sample_rate']}Hz"
     )
-
-    # Effects section
-    console.print()
-    console.print("[bold yellow]Effects & Processing[/]")
-
-    if Confirm.ask("[yellow]Apply DC block filter?[/]", default=False):
-        config["dc_block"] = True
-    else:
-        config["dc_block"] = False
-
-    if Confirm.ask("[yellow]Apply fade in?[/]", default=False):
-        config["fade_in"] = FloatPrompt.ask("  Fade-in duration (seconds)", default=0.1)
-    else:
-        config["fade_in"] = None
-
-    if Confirm.ask("[yellow]Apply fade out?[/]", default=False):
-        config["fade_out"] = FloatPrompt.ask("  Fade-out duration (seconds)", default=0.3)
-    else:
-        config["fade_out"] = None
-
-    if Confirm.ask("[yellow]Apply low-pass filter?[/]", default=False):
-        config["lowpass"] = FloatPrompt.ask("  Cutoff frequency (Hz)", default=5000)
-    else:
-        config["lowpass"] = None
-
-    if Confirm.ask("[yellow]Apply high-pass filter?[/]", default=False):
-        config["highpass"] = FloatPrompt.ask("  Cutoff frequency (Hz)", default=80)
-    else:
-        config["highpass"] = None
-
-    if Confirm.ask("[yellow]Apply stereo width adjustment?[/]", default=False):
-        config["width"] = FloatPrompt.ask("  Width (0=mono, 1=original, >1=wider)", default=1.0)
-    else:
-        config["width"] = None
-
-    if Confirm.ask("[yellow]Apply amplitude modulation (tremolo)?[/]", default=False):
-        rate = FloatPrompt.ask("  Rate (Hz)", default=5.0)
-        depth = FloatPrompt.ask("  Depth (0.0-1.0)", default=0.5)
-        config["tremolo"] = f"{rate},{depth}"
-    else:
-        config["tremolo"] = None
-
-    console.print()
-    console.print("[bold green]\u2713[/] Configuration complete. Generating...")
     console.print()
 
     return config

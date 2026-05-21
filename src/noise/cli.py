@@ -679,16 +679,16 @@ def _generate_from_wizard(config: dict[str, Any]) -> None:
     noise_types = config["noise_types"]
     sample_rate = config["sample_rate"]
     duration = config["duration"]
-    n_samples = int(sample_rate * duration)
+    n_samples = int(sample_rate * duration) if duration else 44100 * 30
     n_channels_list = config["n_channels"]
     formats = config["formats"]
-    bit_depth = config["bit_depth"]
-    lufs_target = config["lufs"]
-    peak_target = config["peak"]
-    seed = config["seed"]
+    lufs_target = config.get("lufs")
     output_dir = Path(config["output_dir"])
+    bit_depth = config.get("quality_value", 24) if "wav" in formats else 24
+    if isinstance(bit_depth, int) and bit_depth > 32:
+        bit_depth = 24
+
     output_dir.mkdir(parents=True, exist_ok=True)
-    rng = np.random.default_rng(seed) if seed is not None else None
 
     files_created: list[Path] = []
     progress = make_progress()
@@ -698,32 +698,10 @@ def _generate_from_wizard(config: dict[str, Any]) -> None:
     with progress:
         for noise_type in noise_types:
             for n_channels in n_channels_list:
-                data = NOISE_GENERATORS[noise_type](n_samples, n_channels=n_channels, rng=rng)
-
-                if config.get("dc_block"):
-                    data = dc_blocker(data)
-                if config.get("fade_in"):
-                    data = fade_in(data, config["fade_in"], sample_rate)
-                if config.get("fade_out"):
-                    data = fade_out(data, config["fade_out"], sample_rate)
-                if config.get("lowpass"):
-                    data = lowpass(data, config["lowpass"], sample_rate)
-                if config.get("highpass"):
-                    data = highpass(data, config["highpass"], sample_rate)
-                if config.get("width") is not None:
-                    data = stereo_width(data, config["width"])
-                if config.get("tremolo"):
-                    parts = [float(x) for x in config["tremolo"].split(",")]
-                    if len(parts) == 2:
-                        data = modulate_amplitude(data, parts[0], parts[1], sample_rate)
+                data = NOISE_GENERATORS[noise_type](n_samples, n_channels=n_channels)
 
                 if lufs_target is not None:
                     data = lufs_normalize(data, target_lufs=lufs_target, sample_rate=sample_rate)
-                if peak_target is not None:
-                    peak = float(np.max(np.abs(data)))
-                    if peak > 0:
-                        target = 10.0 ** (peak_target / 20.0)
-                        data = data * (target / peak)
                 suffix = "_mono" if n_channels == 1 else ""
                 for fmt in formats:
                     filename = f"{noise_type}_noise{suffix}.{fmt}"
