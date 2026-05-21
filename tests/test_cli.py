@@ -102,6 +102,22 @@ class TestParseArgs:
         args = parse_args(["--play"])
         assert args.play
 
+    def test_stats(self) -> None:
+        args = parse_args(["--stats"])
+        assert args.stats
+
+    def test_spectrum(self) -> None:
+        args = parse_args(["--spectrum"])
+        assert args.spectrum
+
+    def test_json(self) -> None:
+        args = parse_args(["--json", "stats.json"])
+        assert args.json == Path("stats.json")
+
+    def test_dry_run(self) -> None:
+        args = parse_args(["--dry-run"])
+        assert args.dry_run
+
     def test_invalid_noise_type(self) -> None:
         with pytest.raises(SystemExit):
             parse_args(["--type", "green"])

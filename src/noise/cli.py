@@ -8,8 +8,11 @@ from pathlib import Path
 import numpy as np
 
 from noise import __version__
+from noise.analysis import ascii_spectrum, compute_stats, save_json_stats
 from noise.completion import SHELL_COMPLETION_SCRIPT, add_completion_args
 from noise.config import generate_example_config, load_config
+from noise.effects import dc_blocker, fade_in, fade_out, invert_phase
+from noise.effects import reverse as reverse_audio
 from noise.generator import (
     generate_blue_noise,
     generate_brown_noise,
@@ -235,6 +238,72 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Play generated audio through system audio output",
     )
 
+    parser.add_argument(
+        "--dc-block",
+        action="store_true",
+        default=False,
+        help="Apply DC offset removal filter",
+    )
+
+    parser.add_argument(
+        "--fade-in",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help="Apply linear fade-in at start (duration in seconds)",
+    )
+
+    parser.add_argument(
+        "--fade-out",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help="Apply linear fade-out at end (duration in seconds)",
+    )
+
+    parser.add_argument(
+        "--reverse",
+        action="store_true",
+        default=False,
+        help="Reverse audio in time",
+    )
+
+    parser.add_argument(
+        "--invert",
+        action="store_true",
+        default=False,
+        help="Invert audio phase (multiply by -1)",
+    )
+
+    parser.add_argument(
+        "--stats",
+        action="store_true",
+        default=False,
+        help="Show detailed audio statistics after generation",
+    )
+
+    parser.add_argument(
+        "--spectrum",
+        action="store_true",
+        default=False,
+        help="Show ASCII frequency spectrum visualization",
+    )
+
+    parser.add_argument(
+        "--json",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="Save audio statistics as JSON file",
+    )
+
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Show what would be generated without creating files",
+    )
+
     return parser.parse_args(argv)
 
 
@@ -289,6 +358,16 @@ def _main(argv: list[str] | None = None) -> None:
     channel_configs = [1, 2] if not args.mono and not args.stereo else ([1] if args.mono else [2])
     format_configs = ["wav", "flac"] if args.format == "all" else [args.format]
 
+    if args.dry_run:
+        print_info("Dry run \u2014 no files will be created:")
+        for noise_type in noise_types:
+            for n_channels in channel_configs:
+                label = "mono" if n_channels == 1 else "stereo"
+                for fmt in format_configs:
+                    suffix = "_mono" if n_channels == 1 else ""
+                    print_info(f"  {noise_type}_noise{suffix}.{fmt} ({label}, {n_samples} samples)")
+        return
+
     if args.measure:
         print_info("Measuring loudness (no files will be saved):")
         for noise_type in noise_types:
@@ -329,6 +408,41 @@ def _main(argv: list[str] | None = None) -> None:
                     if current_peak > 0:
                         target_peak = 10.0 ** (args.peak / 20.0)
                         data = data * (target_peak / current_peak)
+
+                if args.dc_block:
+                    data = dc_blocker(data)
+                if args.fade_in is not None:
+                    data = fade_in(data, args.fade_in, sample_rate)
+                if args.fade_out is not None:
+                    data = fade_out(data, args.fade_out, sample_rate)
+                if args.reverse:
+                    data = reverse_audio(data)
+                if args.invert:
+                    data = invert_phase(data)
+
+                if args.stats:
+                    stats = compute_stats(data, sample_rate)
+                    from rich.table import Table
+
+                    table = Table(title=f"{noise_type.capitalize()} Noise - Audio Statistics")
+                    table.add_column("Property", style="cyan")
+                    table.add_column("Value", style="yellow")
+                    for prop, val in stats.to_table():
+                        table.add_row(prop, val)
+                    console.print(table)
+
+                if args.spectrum:
+                    nyquist = sample_rate / 2
+                    console.print(
+                        f"\n[bold cyan]Spectrum:[/] [yellow]{noise_type} noise[/] (0 \u2014 {nyquist:.0f} Hz)"
+                    )
+                    spec = ascii_spectrum(data, sample_rate, width=50, height=8)
+                    console.print(spec)
+
+                if args.json is not None:
+                    json_path = Path(args.json)
+                    save_json_stats(data, sample_rate, json_path)
+                    print_success(f"Statistics saved to {json_path}")
 
                 channel_label = "mono" if n_channels == 1 else ""
                 suffix = f"_{channel_label}" if channel_label else ""

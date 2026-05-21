@@ -12,6 +12,9 @@ Generate high-quality **white noise**, **pink noise (1/f)**, and **brown noise (
 - Reproducible output with configurable random seed
 - Configurable sample rate and duration
 - Parallel processing support
+- Audio effects: DC blocking, fade in/out, reverse, phase invert
+- Analysis: detailed stats, ASCII spectrum & waveform preview, audio playback
+- JSON export, config file support, shell completion, Docker support
 
 ## Installation
 
@@ -92,6 +95,71 @@ audio/
 ├── pink_noise_mono.wav / pink_noise_mono.flac
 ├── brown_noise.wav / brown_noise.flac
 └── brown_noise_mono.wav / brown_noise_mono.flac
+```
+
+### Effects
+
+| Option | Description |
+|--------|-------------|
+| `--dc-block` | Remove DC offset with high-pass filter |
+| `--fade-in SECONDS` | Linear fade-in at start |
+| `--fade-out SECONDS` | Linear fade-out at end |
+| `--reverse` | Time-reverse the audio |
+| `--invert` | Invert phase (multiply by -1) |
+
+### Analysis & Output
+
+| Option | Description |
+|--------|-------------|
+| `--stats` | Show detailed audio statistics (peak, RMS, crest factor, etc.) |
+| `--spectrum` | Show ASCII frequency spectrum visualization |
+| `--preview` | Show ASCII waveform preview |
+| `--play` | Play audio through system output (requires `sounddevice`) |
+| `--json FILE` | Save audio statistics as JSON |
+| `--dry-run` | Show what would be generated without creating files |
+| `--measure` | Measure loudness in LUFS without saving |
+
+### Configuration
+
+| Option | Description |
+|--------|-------------|
+| `--config FILE` | Load generation config from JSON or YAML file |
+| `--example-config FILE` | Write an example config file and exit |
+| `--list` | List available noise types |
+| `--no-banner` | Suppress startup banner |
+| `--log-file FILE` | Write logs to file |
+| `--verbose` | Verbose/debug output |
+
+### Shell Completion
+
+```bash
+noisetool --generate-completion bash >> ~/.bashrc
+noisetool --generate-completion zsh >> ~/.zshrc
+```
+
+### Example Config File
+
+```json
+{
+    "type": "all",
+    "duration": 30.0,
+    "sample_rate": 44100,
+    "channels": [1, 2],
+    "formats": ["wav", "flac"],
+    "bit_depth": 24,
+    "lufs": -14.0,
+    "peak": -1.0,
+    "seed": 42,
+    "output_dir": "audio"
+}
+```
+
+### Docker
+
+```bash
+docker build -t noisetool .
+docker run --rm noisetool --list
+docker run --rm -v "$PWD/audio:/audio" noisetool -o /audio
 ```
 
 ## Development
