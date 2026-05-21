@@ -186,6 +186,18 @@ class TestParseArgs:
         args = parse_args(["--bitcrush", "8"])
         assert args.bitcrush == 8
 
+    def test_dither(self) -> None:
+        args = parse_args(["--dither", "16"])
+        assert args.dither == 16
+
+    def test_compressor(self) -> None:
+        args = parse_args(["--compressor", "-20,4"])
+        assert args.compressor == "-20,4"
+
+    def test_rms(self) -> None:
+        args = parse_args(["--rms", "-18"])
+        assert args.rms == -18.0
+
     def test_invalid_noise_type(self) -> None:
         with pytest.raises(SystemExit):
             parse_args(["--type", "green"])

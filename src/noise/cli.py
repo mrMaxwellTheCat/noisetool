@@ -17,13 +17,16 @@ from noise.effects import (
     apply_envelope,
     bandpass,
     bitcrush,
+    compressor,
     dc_blocker,
+    dither,
     fade_in,
     fade_out,
     highpass,
     invert_phase,
     lowpass,
     modulate_amplitude,
+    normalize_rms,
     pan,
     stereo_width,
 )
@@ -380,6 +383,30 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         metavar="BITS",
         help="Bitcrushing (1-24 bits). Lower = more lo-fi.",
+    )
+
+    parser.add_argument(
+        "--dither",
+        type=int,
+        default=None,
+        metavar="BITS",
+        help="Apply dithering for target bit depth (e.g., 16)",
+    )
+
+    parser.add_argument(
+        "--compressor",
+        type=str,
+        default=None,
+        metavar="THRESH,RATIO",
+        help="Apply dynamic range compression (e.g., -20,4)",
+    )
+
+    parser.add_argument(
+        "--rms",
+        type=float,
+        default=None,
+        metavar="DBFS",
+        help="RMS-normalize to target level in dBFS (e.g., -18)",
     )
 
     parser.add_argument(
@@ -894,6 +921,14 @@ def _main(argv: list[str] | None = None) -> None:
                         data = modulate_amplitude(data, parts[0], parts[1], sample_rate)
                 if args.bitcrush is not None:
                     data = bitcrush(data, args.bitcrush)
+                if args.dither is not None:
+                    data = dither(data, args.dither)
+                if args.compressor is not None:
+                    parts = [float(x) for x in args.compressor.split(",")]
+                    if len(parts) == 2:
+                        data = compressor(data, parts[0], parts[1], sample_rate=sample_rate)
+                if args.rms is not None:
+                    data = normalize_rms(data, args.rms)
 
                 if args.stats:
                     stats = compute_stats(data, sample_rate)

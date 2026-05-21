@@ -209,6 +209,72 @@ def bitcrush(data: np.ndarray, bits: int = 8) -> np.ndarray:
     return quantized.astype(np.float32)  # type: ignore[no-any-return]
 
 
+def dither(data: np.ndarray, bit_depth: int = 16, noise_shape: bool = True) -> np.ndarray:
+    if bit_depth >= 24:
+        return data
+    quant_steps = 2 ** (bit_depth - 1)
+    dither_amt = 1.0 / quant_steps
+    rng = np.random.default_rng()
+    noise = rng.uniform(-dither_amt, dither_amt, data.shape).astype(data.dtype)
+    if noise_shape:
+        noise = noise - np.roll(noise, 1, axis=0)
+        noise[0] = noise[1]
+    dithered = data + noise
+    quantized = np.round(dithered * quant_steps) / quant_steps
+    max_val = np.max(np.abs(quantized))
+    if max_val > 1.0:
+        quantized /= max_val
+    return quantized.astype(np.float32)  # type: ignore[no-any-return]
+
+
+def compressor(
+    data: np.ndarray,
+    threshold_db: float = -20.0,
+    ratio: float = 4.0,
+    attack_ms: float = 5.0,
+    release_ms: float = 50.0,
+    sample_rate: int = 44100,
+) -> np.ndarray:
+    n = data.shape[0]
+    attack = int(attack_ms * sample_rate / 1000)
+    release = int(release_ms * sample_rate / 1000)
+    threshold = 10.0 ** (threshold_db / 20.0)
+
+    np.zeros(n)
+    gain_reduction = np.zeros(n)
+    for i in range(n):
+        level = float(np.max(np.abs(data[i])))
+        if level > threshold:
+            db_over = 20.0 * np.log10(level / threshold)
+            reduction = db_over - db_over / ratio
+            gain_linear = 10.0 ** (-reduction / 20.0)
+        else:
+            gain_linear = 1.0
+        if i == 0:
+            gain_reduction[i] = gain_linear
+        elif gain_linear < gain_reduction[i - 1]:
+            tc = 1.0 - np.exp(-1.0 / attack) if attack > 0 else 1.0
+            gain_reduction[i] = gain_reduction[i - 1] + tc * (gain_linear - gain_reduction[i - 1])
+        else:
+            tc = 1.0 - np.exp(-1.0 / release) if release > 0 else 1.0
+            gain_reduction[i] = gain_reduction[i - 1] + tc * (gain_linear - gain_reduction[i - 1])
+
+    return (data * gain_reduction.reshape(-1, 1)).astype(data.dtype)
+
+
+def normalize_rms(data: np.ndarray, target_db: float = -18.0) -> np.ndarray:
+    current_rms = float(np.sqrt(np.mean(data**2)))
+    if current_rms <= 0:
+        return data
+    target = 10.0 ** (target_db / 20.0)
+    gain = target / current_rms
+    adjusted = data * gain
+    max_val = np.max(np.abs(adjusted))
+    if max_val > 1.0:
+        adjusted /= max_val
+    return adjusted.astype(data.dtype)  # type: ignore[no-any-return]
+
+
 def normalize_peak(data: np.ndarray, target_db: float = -1.0) -> np.ndarray:
     """Peak-normalize audio to a target level in dB.
 
