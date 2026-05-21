@@ -675,6 +675,36 @@ def _run_benchmark(n_samples: int = 441000, sample_rate: int = 44100) -> None:
     console.print("[dim]Higher real-time ratio = faster than real-time[/]")
 
 
+def _run_continuous_wizard(
+    output_dir: Path,
+    noise_types: list[str],
+    n_channels_list: list[int],
+    formats: list[str],
+    sample_rate: int,
+    lufs_target: float | None,
+    bit_depth: int,
+) -> None:
+    print_info("Continuous mode — press Ctrl+C to stop")
+    counter = 0
+    try:
+        while True:
+            for noise_type in noise_types:
+                for n_channels in n_channels_list:
+                    data = NOISE_GENERATORS[noise_type](sample_rate * 30, n_channels=n_channels)
+                    if lufs_target is not None:
+                        data = lufs_normalize(
+                            data, target_lufs=lufs_target, sample_rate=sample_rate
+                        )
+                    suffix = "_mono" if n_channels == 1 else ""
+                    for fmt in formats:
+                        filename = f"{noise_type}_noise{suffix}_{counter:04d}.{fmt}"
+                        filepath = output_dir / filename
+                        FORMATS[fmt](filepath, data, sample_rate=sample_rate, bit_depth=bit_depth)
+                    counter += 1
+    except KeyboardInterrupt:
+        print_success(f"Stopped — {counter} batch(es) saved to {output_dir}")
+
+
 def _generate_from_wizard(config: dict[str, Any]) -> None:
     noise_types = config["noise_types"]
     sample_rate = config["sample_rate"]
@@ -689,6 +719,12 @@ def _generate_from_wizard(config: dict[str, Any]) -> None:
         bit_depth = 24
 
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    if config.get("continuous"):
+        _run_continuous_wizard(
+            output_dir, noise_types, n_channels_list, formats, sample_rate, lufs_target, bit_depth
+        )
+        return
 
     files_created: list[Path] = []
     progress = make_progress()

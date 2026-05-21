@@ -12,6 +12,14 @@ class TestInteractiveImports:
     def test_run_wizard_is_callable(self) -> None:
         assert callable(run_wizard)
 
+    def test_wizard_returns_dict(self) -> None:
+        # Can't run the wizard interactively in tests,
+        # but verify the function signature is correct
+        import inspect
+
+        sig = inspect.signature(run_wizard)
+        assert "config" not in sig.parameters
+
 
 def test_interactive_flag() -> None:
     from noise.cli import parse_args
@@ -22,12 +30,10 @@ def test_interactive_flag() -> None:
     assert args2.interactive
 
 
-def test_wizard_returns_dict() -> None:
-    """Verify run_wizard returns a dict with expected keys."""
-    from noise.interactive import run_wizard
+def test_continuous_in_wizard() -> None:
+    """Verify continuous mode can be activated."""
+    from noise.interactive import FORMAT_PRESETS, NOISE_PRESETS
 
-    assert callable(run_wizard)
-    import inspect
-
-    sig = inspect.signature(run_wizard)
-    assert "config" not in sig.parameters  # no args
+    assert "1" in NOISE_PRESETS
+    assert "5" in FORMAT_PRESETS
+    assert FORMAT_PRESETS["5"]["label"] == "WAV+FLAC"

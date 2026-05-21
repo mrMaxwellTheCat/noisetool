@@ -101,10 +101,14 @@ def run_wizard() -> dict[str, Any]:
 
     # --- Duration ---
     console.print(f"[dim]{sep}[/]")
-    config["duration"] = IntPrompt.ask(
-        "[yellow]Length[/] (seconds, [dim]0 for continuous[/])",
-        default=30,
+    console.print("[dim]Set [i]0[/i] seconds for continuous generation[/]")
+    raw_dur = Prompt.ask(
+        "[yellow]Length[/] (seconds, or [i]0[/] for continuous)",
+        default="30",
     )
+    dur = float(raw_dur)
+    config["duration"] = dur if dur > 0 else 30.0
+    config["continuous"] = dur == 0
 
     # --- Format ---
     console.print(f"[dim]{sep}[/]")
@@ -151,13 +155,14 @@ def run_wizard() -> dict[str, Any]:
     console.print()
     console.print(f"[dim]{sep}[/]")
     n_types = len(config["noise_types"])
-    ch_map = {1: "mono", 2: "stereo", 3: "both"}
-    ch_label = ch_map.get(len(config["n_channels"]), "both")
+    ch_map = {1: "mono only", 2: "stereo only", 3: "stereo+mono"}
+    ch_label = ch_map.get(len(config["n_channels"]), "stereo+mono")
     fmt_label: str = fp["label"]
-    dur_str = f"{config['duration']}s" if config.get("duration") else "continuous"
+    mode = "continuous" if config.get("continuous") else f"{config['duration']}s"
+    lufs_label = f"{config['lufs']} LUFS" if config.get("lufs") else "none"
     console.print(
-        f"[green]\u2713[/] {n_types} type(s), {ch_label}, {dur_str}, "
-        f"{fmt_label}, {config['sample_rate']}Hz"
+        f"[green]\u2713[/] [bold]{n_types} type(s)[/] | {ch_label} | {mode} | "
+        f"{fmt_label} | {config['sample_rate']}Hz | LUFS: {lufs_label}"
     )
     console.print()
 
