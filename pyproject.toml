@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "noisetool"
 version = "1.0.0"
-description = "High-quality noise generator (white, pink, brown) with LUFS normalization"
+description = "High-quality noise generator (white, pink, brown, blue, violet, grey) with LUFS normalization"
 readme = "README.md"
 authors = [
     {name = "mrMaxwellTheCat", email = "mrMaxwellTheCat@users.noreply.github.com"},
@@ -21,7 +21,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Multimedia :: Sound/Audio :: Sound Synthesis",
 ]
-keywords = ["noise", "audio", "white-noise", "pink-noise", "brown-noise", "lufs"]
+keywords = ["noise", "audio", "white-noise", "pink-noise", "brown-noise", "blue-noise", "violet-noise", "grey-noise", "lufs", "sound-synthesis"]
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=2.0",
