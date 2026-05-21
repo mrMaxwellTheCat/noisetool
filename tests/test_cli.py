@@ -198,6 +198,10 @@ class TestParseArgs:
         args = parse_args(["--rms", "-18"])
         assert args.rms == -18.0
 
+    def test_info(self) -> None:
+        args = parse_args(["--info", "test.wav"])
+        assert args.info == Path("test.wav")
+
     def test_invalid_noise_type(self) -> None:
         with pytest.raises(SystemExit):
             parse_args(["--type", "green"])

@@ -123,6 +123,47 @@ def run_wizard() -> dict[str, Any]:
         default="audio",
     )
 
+    # Effects section
+    console.print()
+    console.print("[bold yellow]Effects & Processing[/]")
+
+    if Confirm.ask("[yellow]Apply DC block filter?[/]", default=False):
+        config["dc_block"] = True
+    else:
+        config["dc_block"] = False
+
+    if Confirm.ask("[yellow]Apply fade in?[/]", default=False):
+        config["fade_in"] = FloatPrompt.ask("  Fade-in duration (seconds)", default=0.1)
+    else:
+        config["fade_in"] = None
+
+    if Confirm.ask("[yellow]Apply fade out?[/]", default=False):
+        config["fade_out"] = FloatPrompt.ask("  Fade-out duration (seconds)", default=0.3)
+    else:
+        config["fade_out"] = None
+
+    if Confirm.ask("[yellow]Apply low-pass filter?[/]", default=False):
+        config["lowpass"] = FloatPrompt.ask("  Cutoff frequency (Hz)", default=5000)
+    else:
+        config["lowpass"] = None
+
+    if Confirm.ask("[yellow]Apply high-pass filter?[/]", default=False):
+        config["highpass"] = FloatPrompt.ask("  Cutoff frequency (Hz)", default=80)
+    else:
+        config["highpass"] = None
+
+    if Confirm.ask("[yellow]Apply stereo width adjustment?[/]", default=False):
+        config["width"] = FloatPrompt.ask("  Width (0=mono, 1=original, >1=wider)", default=1.0)
+    else:
+        config["width"] = None
+
+    if Confirm.ask("[yellow]Apply amplitude modulation (tremolo)?[/]", default=False):
+        rate = FloatPrompt.ask("  Rate (Hz)", default=5.0)
+        depth = FloatPrompt.ask("  Depth (0.0-1.0)", default=0.5)
+        config["tremolo"] = f"{rate},{depth}"
+    else:
+        config["tremolo"] = None
+
     console.print()
     console.print("[bold green]\u2713[/] Configuration complete. Generating...")
     console.print()

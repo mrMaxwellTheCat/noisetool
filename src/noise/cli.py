@@ -394,6 +394,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--info",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="Show detailed info about an existing audio file",
+    )
+
+    parser.add_argument(
         "--bitcrush",
         type=int,
         default=None,
@@ -652,7 +660,7 @@ def _run_benchmark(n_samples: int = 441000, sample_rate: int = 44100) -> None:
     console.print("[dim]Higher real-time ratio = faster than real-time[/]")
 
 
-def _generate_from_wizard(config: dict[str, Any], pattern: str | None = None) -> None:
+def _generate_from_wizard(config: dict[str, Any]) -> None:
     noise_types = config["noise_types"]
     sample_rate = config["sample_rate"]
     duration = config["duration"]
@@ -676,6 +684,24 @@ def _generate_from_wizard(config: dict[str, Any], pattern: str | None = None) ->
         for noise_type in noise_types:
             for n_channels in n_channels_list:
                 data = NOISE_GENERATORS[noise_type](n_samples, n_channels=n_channels, rng=rng)
+
+                if config.get("dc_block"):
+                    data = dc_blocker(data)
+                if config.get("fade_in"):
+                    data = fade_in(data, config["fade_in"], sample_rate)
+                if config.get("fade_out"):
+                    data = fade_out(data, config["fade_out"], sample_rate)
+                if config.get("lowpass"):
+                    data = lowpass(data, config["lowpass"], sample_rate)
+                if config.get("highpass"):
+                    data = highpass(data, config["highpass"], sample_rate)
+                if config.get("width") is not None:
+                    data = stereo_width(data, config["width"])
+                if config.get("tremolo"):
+                    parts = [float(x) for x in config["tremolo"].split(",")]
+                    if len(parts) == 2:
+                        data = modulate_amplitude(data, parts[0], parts[1], sample_rate)
+
                 if lufs_target is not None:
                     data = lufs_normalize(data, target_lufs=lufs_target, sample_rate=sample_rate)
                 if peak_target is not None:
@@ -683,27 +709,39 @@ def _generate_from_wizard(config: dict[str, Any], pattern: str | None = None) ->
                     if peak > 0:
                         target = 10.0 ** (peak_target / 20.0)
                         data = data * (target / peak)
+                suffix = "_mono" if n_channels == 1 else ""
                 for fmt in formats:
-                    if pattern:
-                        ch_label = "mono" if n_channels == 1 else "stereo"
-                        filename = pattern.format(
-                            type=noise_type,
-                            channels=ch_label,
-                            format=fmt,
-                            sr=sample_rate,
-                            bits=bit_depth,
-                            seed=seed if seed is not None else 0,
-                        )
-                    else:
-                        suffix = "_mono" if n_channels == 1 else ""
-                        filename = f"{noise_type}_noise{suffix}.{fmt}"
+                    filename = f"{noise_type}_noise{suffix}.{fmt}"
                     filepath = output_dir / filename
                     FORMATS[fmt](filepath, data, sample_rate=sample_rate, bit_depth=bit_depth)
                     files_created.append(filepath)
                     progress.advance(task)
 
     print_results_table(files_created, output_dir)
-    print_success(f"Done — {len(files_created)} file(s) saved to {output_dir}")
+    print_success(f"Done \u2014 {len(files_created)} file(s) saved to {output_dir}")
+
+
+def _show_file_info(path: Path) -> None:
+    """Display detailed information about an audio file."""
+    import soundfile as sf
+
+    data, sr = sf.read(str(path))
+    stats = compute_stats(data, sr)
+    size = path.stat().st_size
+
+    from rich.table import Table
+
+    table = Table(title=f"File Info: [cyan]{path.name}[/]", border_style="blue")
+    table.add_column("Property", style="cyan")
+    table.add_column("Value", style="yellow")
+    table.add_row("Path", str(path.resolve()))
+    table.add_row("Size", f"{size:,} bytes ({size / 1024:.1f} KB)")
+    table.add_row("Format", str(path.suffix).upper())
+
+    for prop, val in stats.to_table():
+        table.add_row(prop, val)
+
+    console.print(table)
 
 
 def _main(argv: list[str] | None = None) -> None:
@@ -718,6 +756,10 @@ def _main(argv: list[str] | None = None) -> None:
         return
 
     args = parse_args(argv)
+
+    if args.info is not None:
+        _show_file_info(args.info)
+        return
 
     if args.benchmark:
         sample_rate = args.sample_rate
