@@ -154,6 +154,22 @@ class TestParseArgs:
         args = parse_args(["--mix", "pink=0.7,white=0.3"])
         assert args.mix == "pink=0.7,white=0.3"
 
+    def test_lowpass(self) -> None:
+        args = parse_args(["--lowpass", "1000"])
+        assert args.lowpass == 1000.0
+
+    def test_highpass(self) -> None:
+        args = parse_args(["--highpass", "100"])
+        assert args.highpass == 100.0
+
+    def test_bandpass(self) -> None:
+        args = parse_args(["--bandpass", "20,20000"])
+        assert args.bandpass == "20,20000"
+
+    def test_envelope(self) -> None:
+        args = parse_args(["--envelope", "0.1,0.2,0.7,0.3"])
+        assert args.envelope == "0.1,0.2,0.7,0.3"
+
     def test_invalid_noise_type(self) -> None:
         with pytest.raises(SystemExit):
             parse_args(["--type", "green"])

@@ -13,7 +13,16 @@ from noise import __version__
 from noise.analysis import ascii_spectrum, compute_stats, save_json_stats
 from noise.completion import SHELL_COMPLETION_SCRIPT, add_completion_args
 from noise.config import generate_example_config, load_config
-from noise.effects import dc_blocker, fade_in, fade_out, invert_phase
+from noise.effects import (
+    apply_envelope,
+    bandpass,
+    dc_blocker,
+    fade_in,
+    fade_out,
+    highpass,
+    invert_phase,
+    lowpass,
+)
 from noise.effects import reverse as reverse_audio
 from noise.formats import save_aiff, save_ogg, save_raw
 from noise.generator import (
@@ -295,6 +304,38 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         default=False,
         help="Invert audio phase (multiply by -1)",
+    )
+
+    parser.add_argument(
+        "--lowpass",
+        type=float,
+        default=None,
+        metavar="HZ",
+        help="Apply low-pass filter with cutoff frequency in Hz",
+    )
+
+    parser.add_argument(
+        "--highpass",
+        type=float,
+        default=None,
+        metavar="HZ",
+        help="Apply high-pass filter with cutoff frequency in Hz",
+    )
+
+    parser.add_argument(
+        "--bandpass",
+        type=str,
+        default=None,
+        metavar="LOW,HIGH",
+        help="Apply band-pass filter (e.g., 20,20000)",
+    )
+
+    parser.add_argument(
+        "--envelope",
+        type=str,
+        default=None,
+        metavar="A,D,S,R",
+        help="Apply ADSR envelope (e.g., 0.1,0.2,0.7,0.3 for attack,decay,sustain,release)",
     )
 
     parser.add_argument(
@@ -711,6 +752,20 @@ def _main(argv: list[str] | None = None) -> None:
                     data = reverse_audio(data)
                 if args.invert:
                     data = invert_phase(data)
+                if args.lowpass is not None:
+                    data = lowpass(data, args.lowpass, sample_rate)
+                if args.highpass is not None:
+                    data = highpass(data, args.highpass, sample_rate)
+                if args.bandpass is not None:
+                    parts = [float(x) for x in args.bandpass.split(",")]
+                    if len(parts) == 2:
+                        data = bandpass(data, parts[0], parts[1], sample_rate)
+                if args.envelope is not None:
+                    parts = [float(x) for x in args.envelope.split(",")]
+                    if len(parts) == 4:
+                        data = apply_envelope(
+                            data, parts[0], parts[1], parts[2], parts[3], sample_rate
+                        )
 
                 if args.stats:
                     stats = compute_stats(data, sample_rate)
