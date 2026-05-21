@@ -151,7 +151,7 @@ def run_wizard() -> dict[str, Any]:
         default="30",
     )
     dur = float(raw_dur)
-    config["duration"] = dur if dur > 0 else 30.0
+    config["duration"] = max(0.01, min(86400, dur)) if dur > 0 else 30.0
     config["continuous"] = dur == 0
 
     # --- Format ---
@@ -175,6 +175,7 @@ def run_wizard() -> dict[str, Any]:
             default="44100",
         )
     )
+    config["sample_rate"] = max(8000, min(384000, config["sample_rate"]))
 
     # --- Loudness ---
     console.print(f"[dim]{sep}[/]")

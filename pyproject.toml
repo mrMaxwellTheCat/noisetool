@@ -68,6 +68,12 @@ line-length = 100
 select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "ARG", "C4"]
 ignore = ["E501"]
 
+[tool.interactive]
+min_duration = 0.01
+max_duration = 86400
+min_sample_rate = 8000
+max_sample_rate = 384000
+
 [tool.pytest.ini_options]
 addopts = "-v --tb=short"
 testpaths = ["tests"]
