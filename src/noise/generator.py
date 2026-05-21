@@ -238,3 +238,47 @@ def generate_grey_noise(
     if max_val > 0:
         grey /= max_val
     return grey.astype(np.float32)
+
+
+def mix_noise(
+    n_samples: int,
+    n_channels: int = 2,
+    *,
+    weights: dict[str, float] | None = None,
+    rng: np.random.Generator | None = None,
+) -> np.ndarray:
+    """Generate a mix of multiple noise types with specified weights.
+
+    Args:
+        n_samples: Number of audio samples to generate.
+        n_channels: Number of channels (1=mono, 2=stereo).
+        weights: Dict mapping noise type names to mix weights (e.g., {"pink": 0.7, "white": 0.3}).
+        rng: Optional numpy random generator for reproducibility.
+
+    Returns:
+        Float32 array of mixed noise, normalized to [-1, 1].
+    """
+    if weights is None:
+        weights = {"pink": 0.7, "brown": 0.3}
+    if rng is None:
+        rng = np.random.default_rng()
+
+    total = np.zeros((n_samples, n_channels), dtype=np.float64)
+    weight_sum = sum(weights.values())
+    for noise_type, weight in weights.items():
+        gen = {
+            "white": generate_white_noise,
+            "pink": generate_pink_noise,
+            "brown": generate_brown_noise,
+            "blue": generate_blue_noise,
+            "violet": generate_violet_noise,
+            "grey": generate_grey_noise,
+        }.get(noise_type)
+        if gen is not None:
+            data = gen(n_samples, n_channels=n_channels, rng=rng)
+            total += data.astype(np.float64) * (weight / weight_sum)
+
+    max_val = np.max(np.abs(total))
+    if max_val > 0:
+        total /= max_val
+    return total.astype(np.float32)

@@ -15,7 +15,7 @@ from noise.completion import SHELL_COMPLETION_SCRIPT, add_completion_args
 from noise.config import generate_example_config, load_config
 from noise.effects import dc_blocker, fade_in, fade_out, invert_phase
 from noise.effects import reverse as reverse_audio
-from noise.formats import save_aiff, save_raw
+from noise.formats import save_aiff, save_ogg, save_raw
 from noise.generator import (
     generate_blue_noise,
     generate_brown_noise,
@@ -23,6 +23,7 @@ from noise.generator import (
     generate_pink_noise,
     generate_violet_noise,
     generate_white_noise,
+    mix_noise,
 )
 from noise.lufs import measure_loudness
 from noise.lufs import normalize_loudness as lufs_normalize
@@ -65,6 +66,7 @@ FORMATS = {
     "flac": save_flac,
     "aiff": save_aiff,
     "raw": save_raw,
+    "ogg": save_ogg,
 }
 
 
@@ -135,7 +137,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--format",
         type=str,
         default="all",
-        choices=["all", "wav", "flac", "aiff", "raw"],
+        choices=["all", "wav", "flac", "aiff", "raw", "ogg"],
         help="Output format (default: both wav and flac)",
     )
 
@@ -175,6 +177,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         default=None,
         help="Random seed for reproducible generation",
+    )
+
+    parser.add_argument(
+        "--benchmark",
+        action="store_true",
+        default=False,
+        help="Run performance benchmark of all noise generators and exit",
     )
 
     parser.add_argument(
@@ -228,6 +237,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Write an example config file and exit",
     )
     add_completion_args(parser)
+
+    parser.add_argument(
+        "--mix",
+        type=str,
+        default=None,
+        metavar="TYPE1=WEIGHT,TYPE2=WEIGHT,...",
+        help="Mix multiple noise types with weights (e.g., pink=0.7,white=0.3)",
+    )
 
     parser.add_argument(
         "--preview",
@@ -357,9 +374,13 @@ def _generate_one(
     output_dir: Path,
     bit_depth: int,
     formats: list[str],
+    mix_weights: dict[str, float] | None = None,
 ) -> list[Path]:
     rng = np.random.default_rng(rng_seed) if rng_seed is not None else None
-    data = NOISE_GENERATORS[noise_type](n_samples, n_channels=n_channels, rng=rng)
+    if mix_weights is not None:
+        data = mix_noise(n_samples, n_channels=n_channels, weights=mix_weights, rng=rng)
+    else:
+        data = NOISE_GENERATORS[noise_type](n_samples, n_channels=n_channels, rng=rng)
 
     if lufs_target is not None:
         data = lufs_normalize(data, target_lufs=lufs_target, sample_rate=sample_rate)
@@ -421,8 +442,78 @@ def make_loopable(data: np.ndarray, crossfade_samples: int = 256) -> np.ndarray:
     return out  # type: ignore[no-any-return]
 
 
+def parse_mix_arg(mix_str: str) -> dict[str, float]:
+    """Parse a mix argument string like 'pink=0.7,white=0.3' into a dict."""
+    weights: dict[str, float] = {}
+    for part in mix_str.split(","):
+        part = part.strip()
+        if "=" in part:
+            noise_type, weight_str = part.split("=", 1)
+            weights[noise_type.strip()] = float(weight_str.strip())
+        else:
+            weights[part] = 1.0
+    return weights
+
+
+def _run_benchmark(n_samples: int = 441000, sample_rate: int = 44100) -> None:
+    """Run a performance benchmark of all noise generators."""
+    import time
+
+    rng = np.random.default_rng(42)
+    from rich.table import Table
+
+    from noise.ui import console
+
+    results: list[tuple[str, float, float, float]] = []
+    gen_funcs = {
+        "white": generate_white_noise,
+        "pink": generate_pink_noise,
+        "brown": generate_brown_noise,
+        "blue": generate_blue_noise,
+        "violet": generate_violet_noise,
+        "grey": generate_grey_noise,
+    }
+
+    console.print(
+        f"[bold]Benchmark:[/] {n_samples} samples ({n_samples / sample_rate:.1f}s at {sample_rate} Hz)"
+    )
+    console.print()
+
+    for name, func in gen_funcs.items():
+        # Warmup
+        func(1024, n_channels=2, rng=rng)
+
+        # Benchmark
+        start = time.perf_counter()
+        for _ in range(5):
+            func(n_samples, n_channels=2, rng=rng)
+        elapsed = time.perf_counter() - start
+        avg_time = elapsed / 5
+        realtime_ratio = (n_samples / sample_rate) / avg_time
+
+        data = func(n_samples, n_channels=2, rng=rng)
+        loudness = measure_loudness(data, sample_rate)
+        results.append((name, avg_time, realtime_ratio, loudness))
+
+    table = Table(title="Generation Speed Benchmark")
+    table.add_column("Noise Type", style="cyan")
+    table.add_column("Avg Time (s)", style="yellow", justify="right")
+    table.add_column("Real-time Ratio", style="green", justify="right")
+    table.add_column("Loudness (LUFS)", style="magenta", justify="right")
+    for name, t, ratio, loudness in results:
+        table.add_row(name, f"{t:.4f}", f"{ratio:.1f}x", f"{loudness:.2f}")
+    console.print(table)
+    console.print("[dim]Higher real-time ratio = faster than real-time[/]")
+
+
 def _main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
+
+    if args.benchmark:
+        sample_rate = args.sample_rate
+        n_samples = int(sample_rate * args.duration)
+        _run_benchmark(n_samples=n_samples, sample_rate=sample_rate)
+        return
 
     if args.example_config is not None:
         generate_example_config(args.example_config)
@@ -468,7 +559,12 @@ def _main(argv: list[str] | None = None) -> None:
     n_samples = int(sample_rate * args.duration)
     rng = np.random.default_rng(args.seed) if args.seed is not None else None
 
-    noise_types = list(NOISE_GENERATORS.keys()) if args.type == "all" else [args.type]
+    if args.mix is not None:
+        noise_types = ["mixed"]
+        mix_weights = parse_mix_arg(args.mix)
+    else:
+        noise_types = list(NOISE_GENERATORS.keys()) if args.type == "all" else [args.type]
+        mix_weights = None
     channel_configs = [1, 2] if not args.mono and not args.stereo else ([1] if args.mono else [2])
     format_configs = ["wav", "flac"] if args.format == "all" else [args.format]
 
@@ -485,7 +581,10 @@ def _main(argv: list[str] | None = None) -> None:
     if args.measure:
         print_info("Measuring loudness (no files will be saved):")
         for noise_type in noise_types:
-            data = NOISE_GENERATORS[noise_type](n_samples, n_channels=2, rng=rng)
+            if mix_weights is not None:
+                data = mix_noise(n_samples, n_channels=2, weights=mix_weights, rng=rng)
+            else:
+                data = NOISE_GENERATORS[noise_type](n_samples, n_channels=2, rng=rng)
             loudness = measure_loudness(data, sample_rate)
             console.print(
                 f"  [yellow]{noise_type.capitalize():8}[/] noise: [bold]{loudness:>7.2f} LUFS[/]"
@@ -520,6 +619,7 @@ def _main(argv: list[str] | None = None) -> None:
                         "output_dir": output_dir,
                         "bit_depth": args.bit_depth,
                         "formats": format_configs,
+                        "mix_weights": mix_weights,
                     }
                 )
 
@@ -542,9 +642,14 @@ def _main(argv: list[str] | None = None) -> None:
                 for noise_type in noise_types:
                     for n_channels in channel_configs:
                         rng = np.random.default_rng()
-                        data = NOISE_GENERATORS[noise_type](
-                            n_samples, n_channels=n_channels, rng=rng
-                        )
+                        if mix_weights is not None:
+                            data = mix_noise(
+                                n_samples, n_channels=n_channels, weights=mix_weights, rng=rng
+                            )
+                        else:
+                            data = NOISE_GENERATORS[noise_type](
+                                n_samples, n_channels=n_channels, rng=rng
+                            )
                         if args.loop:
                             data = make_loopable(data)
                         if args.lufs is not None:
@@ -574,7 +679,10 @@ def _main(argv: list[str] | None = None) -> None:
     with progress:
         for noise_type in noise_types:
             for n_channels in channel_configs:
-                data = NOISE_GENERATORS[noise_type](n_samples, n_channels=n_channels, rng=rng)
+                if mix_weights is not None:
+                    data = mix_noise(n_samples, n_channels=n_channels, weights=mix_weights, rng=rng)
+                else:
+                    data = NOISE_GENERATORS[noise_type](n_samples, n_channels=n_channels, rng=rng)
 
                 if args.lufs is not None:
                     before = measure_loudness(data, sample_rate)

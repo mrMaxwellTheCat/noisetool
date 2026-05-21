@@ -18,6 +18,29 @@ def save_aiff(
     return path
 
 
+def save_ogg(
+    path: Path,
+    data: np.ndarray,
+    sample_rate: int = SAMPLE_RATE,
+    bit_depth: int = 24,  # noqa: ARG001
+) -> Path:
+    """Save audio data as OGG Vorbis format.
+
+    Args:
+        path: Output file path.
+        data: Audio array, shape (n_samples, n_channels).
+        sample_rate: Sample rate in Hz.
+        bit_depth: Ignored for OGG (always uses Vorbis compression).
+
+    Returns:
+        Path to the saved file.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(str(path), data, sample_rate, format="OGG")
+    return path
+
+
 def save_raw(
     path: Path,
     data: np.ndarray,

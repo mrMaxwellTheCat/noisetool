@@ -142,6 +142,18 @@ class TestParseArgs:
         args = parse_args(["--workers", "4"])
         assert args.workers == 4
 
+    def test_benchmark(self) -> None:
+        args = parse_args(["--benchmark"])
+        assert args.benchmark
+
+    def test_format_ogg(self) -> None:
+        args = parse_args(["-f", "ogg"])
+        assert args.format == "ogg"
+
+    def test_mix(self) -> None:
+        args = parse_args(["--mix", "pink=0.7,white=0.3"])
+        assert args.mix == "pink=0.7,white=0.3"
+
     def test_invalid_noise_type(self) -> None:
         with pytest.raises(SystemExit):
             parse_args(["--type", "green"])
