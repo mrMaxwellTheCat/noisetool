@@ -271,6 +271,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--pattern",
+        type=str,
+        default=None,
+        metavar="TEMPLATE",
+        help="Custom filename pattern. Variables: {type}, {channels}, {format}, {sr}, {bits}, {seed}",
+    )
+
+    parser.add_argument(
+        "--seeds",
+        type=str,
+        default=None,
+        metavar="SEEDS",
+        help="Generate with multiple seeds (comma-separated). E.g., 1,2,3,42,100",
+    )
+
+    parser.add_argument(
         "--preview",
         action="store_true",
         default=False,
@@ -417,6 +433,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--eq-viz",
+        action="store_true",
+        default=False,
+        help="Show EQ frequency response plot when using filters",
+    )
+
+    parser.add_argument(
         "--spectrum",
         action="store_true",
         default=False,
@@ -487,6 +510,7 @@ def _generate_one(
     bit_depth: int,
     formats: list[str],
     mix_weights: dict[str, float] | None = None,
+    pattern: str | None = None,
 ) -> list[Path]:
     rng = np.random.default_rng(rng_seed) if rng_seed is not None else None
     if mix_weights is not None:
@@ -514,12 +538,22 @@ def _generate_one(
             target_peak = 10.0 ** (peak_target / 20.0)
             data = data * (target_peak / current_peak)
 
-    channel_label = "mono" if n_channels == 1 else ""
-    suffix = f"_{channel_label}" if channel_label else ""
-
     files: list[Path] = []
     for fmt in formats:
-        filename = f"{noise_type}_noise{suffix}.{fmt}"
+        if pattern:
+            ch_label = "mono" if n_channels == 1 else "stereo"
+            filename = pattern.format(
+                type=noise_type,
+                channels=ch_label,
+                format=fmt,
+                sr=sample_rate,
+                bits=bit_depth,
+                seed=rng_seed if rng_seed is not None else 0,
+            )
+        else:
+            channel_label = "mono" if n_channels == 1 else ""
+            suffix = f"_{channel_label}" if channel_label else ""
+            filename = f"{noise_type}_noise{suffix}.{fmt}"
         filepath = output_dir / filename
         saver = FORMATS[fmt]
         saver(filepath, data, sample_rate=sample_rate, bit_depth=bit_depth)
@@ -618,7 +652,7 @@ def _run_benchmark(n_samples: int = 441000, sample_rate: int = 44100) -> None:
     console.print("[dim]Higher real-time ratio = faster than real-time[/]")
 
 
-def _generate_from_wizard(config: dict[str, Any]) -> None:
+def _generate_from_wizard(config: dict[str, Any], pattern: str | None = None) -> None:
     noise_types = config["noise_types"]
     sample_rate = config["sample_rate"]
     duration = config["duration"]
@@ -649,9 +683,20 @@ def _generate_from_wizard(config: dict[str, Any]) -> None:
                     if peak > 0:
                         target = 10.0 ** (peak_target / 20.0)
                         data = data * (target / peak)
-                suffix = "_mono" if n_channels == 1 else ""
                 for fmt in formats:
-                    filename = f"{noise_type}_noise{suffix}.{fmt}"
+                    if pattern:
+                        ch_label = "mono" if n_channels == 1 else "stereo"
+                        filename = pattern.format(
+                            type=noise_type,
+                            channels=ch_label,
+                            format=fmt,
+                            sr=sample_rate,
+                            bits=bit_depth,
+                            seed=seed if seed is not None else 0,
+                        )
+                    else:
+                        suffix = "_mono" if n_channels == 1 else ""
+                        filename = f"{noise_type}_noise{suffix}.{fmt}"
                     filepath = output_dir / filename
                     FORMATS[fmt](filepath, data, sample_rate=sample_rate, bit_depth=bit_depth)
                     files_created.append(filepath)
@@ -737,6 +782,7 @@ def _main(argv: list[str] | None = None) -> None:
 
     sample_rate = args.sample_rate
     n_samples = int(sample_rate * args.duration)
+    seeds_to_use = [int(s.strip()) for s in args.seeds.split(",")] if args.seeds else [args.seed]
     rng = np.random.default_rng(args.seed) if args.seed is not None else None
 
     if not args.interactive:
@@ -759,8 +805,19 @@ def _main(argv: list[str] | None = None) -> None:
             for n_channels in channel_configs:
                 label = "mono" if n_channels == 1 else "stereo"
                 for fmt in format_configs:
-                    suffix = "_mono" if n_channels == 1 else ""
-                    print_info(f"  {noise_type}_noise{suffix}.{fmt} ({label}, {n_samples} samples)")
+                    if args.pattern:
+                        filename = args.pattern.format(
+                            type=noise_type,
+                            channels=label,
+                            format=fmt,
+                            sr=sample_rate,
+                            bits=args.bit_depth,
+                            seed=args.seed if args.seed is not None else 0,
+                        )
+                    else:
+                        suffix = "_mono" if n_channels == 1 else ""
+                        filename = f"{noise_type}_noise{suffix}.{fmt}"
+                    print_info(f"  {filename} ({label}, {n_samples} samples)")
         return
 
     if args.measure:
@@ -783,30 +840,35 @@ def _main(argv: list[str] | None = None) -> None:
     files_created: list[Path] = []
 
     if args.parallel:
+        seeds_to_use_par = (
+            [int(s.strip()) for s in args.seeds.split(",")] if args.seeds else [args.seed]
+        )
         n_workers = args.workers or None
         tasks: list[dict[str, Any]] = []
         for noise_type in noise_types:
             for n_channels in channel_configs:
-                tasks.append(
-                    {
-                        "noise_type": noise_type,
-                        "n_samples": n_samples,
-                        "n_channels": n_channels,
-                        "sample_rate": sample_rate,
-                        "rng_seed": args.seed,
-                        "lufs_target": args.lufs,
-                        "peak_target": args.peak,
-                        "apply_dc_block": args.dc_block,
-                        "fade_in_sec": args.fade_in,
-                        "fade_out_sec": args.fade_out,
-                        "apply_reverse": args.reverse,
-                        "apply_invert": args.invert,
-                        "output_dir": output_dir,
-                        "bit_depth": args.bit_depth,
-                        "formats": format_configs,
-                        "mix_weights": mix_weights,
-                    }
-                )
+                for seed_val in seeds_to_use_par:
+                    tasks.append(
+                        {
+                            "noise_type": noise_type,
+                            "n_samples": n_samples,
+                            "n_channels": n_channels,
+                            "sample_rate": sample_rate,
+                            "rng_seed": seed_val,
+                            "lufs_target": args.lufs,
+                            "peak_target": args.peak,
+                            "apply_dc_block": args.dc_block,
+                            "fade_in_sec": args.fade_in,
+                            "fade_out_sec": args.fade_out,
+                            "apply_reverse": args.reverse,
+                            "apply_invert": args.invert,
+                            "output_dir": output_dir,
+                            "bit_depth": args.bit_depth,
+                            "formats": format_configs,
+                            "mix_weights": mix_weights,
+                            "pattern": args.pattern,
+                        }
+                    )
 
         print_info(f"Generating {len(tasks)} task(s) with parallel worker(s)...")
         with concurrent.futures.ThreadPoolExecutor(max_workers=n_workers) as executor:
@@ -841,10 +903,21 @@ def _main(argv: list[str] | None = None) -> None:
                             data = lufs_normalize(
                                 data, target_lufs=args.lufs, sample_rate=sample_rate
                             )
-                        channel_label = "mono" if n_channels == 1 else ""
-                        suffix = f"_{channel_label}" if channel_label else ""
                         for fmt in format_configs:
-                            filename = f"{noise_type}_noise{suffix}_{counter:04d}.{fmt}"
+                            if args.pattern:
+                                ch_label = "mono" if n_channels == 1 else "stereo"
+                                filename = args.pattern.format(
+                                    type=noise_type,
+                                    channels=ch_label,
+                                    format=fmt,
+                                    sr=sample_rate,
+                                    bits=args.bit_depth,
+                                    seed=0,
+                                )
+                            else:
+                                channel_label = "mono" if n_channels == 1 else ""
+                                suffix = f"_{channel_label}" if channel_label else ""
+                                filename = f"{noise_type}_noise{suffix}_{counter:04d}.{fmt}"
                             filepath = output_dir / filename
                             saver = FORMATS[fmt]
                             saver(filepath, data, sample_rate=sample_rate, bit_depth=args.bit_depth)
@@ -858,112 +931,128 @@ def _main(argv: list[str] | None = None) -> None:
         return
 
     progress = make_progress()
-    total_tasks = len(noise_types) * len(channel_configs) * len(format_configs)
+    total_tasks = len(noise_types) * len(channel_configs) * len(format_configs) * len(seeds_to_use)
     task = progress.add_task("Generating...", total=total_tasks)
 
     with progress:
         for noise_type in noise_types:
             for n_channels in channel_configs:
-                if mix_weights is not None:
-                    data = mix_noise(n_samples, n_channels=n_channels, weights=mix_weights, rng=rng)
-                else:
-                    data = NOISE_GENERATORS[noise_type](n_samples, n_channels=n_channels, rng=rng)
-
-                if args.lufs is not None:
-                    before = measure_loudness(data, sample_rate)
-                    data = lufs_normalize(data, target_lufs=args.lufs, sample_rate=sample_rate)
-                    after = measure_loudness(data, sample_rate)
-                    logger.debug(
-                        "Loudness: %.2f LUFS -> %.2f LUFS (target: %.1f LUFS)",
-                        before,
-                        after,
-                        args.lufs,
-                    )
-
-                if args.peak is not None:
-                    current_peak = float(np.max(np.abs(data)))
-                    if current_peak > 0:
-                        target_peak = 10.0 ** (args.peak / 20.0)
-                        data = data * (target_peak / current_peak)
-
-                if args.dc_block:
-                    data = dc_blocker(data)
-                if args.fade_in is not None:
-                    data = fade_in(data, args.fade_in, sample_rate)
-                if args.fade_out is not None:
-                    data = fade_out(data, args.fade_out, sample_rate)
-                if args.reverse:
-                    data = reverse_audio(data)
-                if args.invert:
-                    data = invert_phase(data)
-                if args.lowpass is not None:
-                    data = lowpass(data, args.lowpass, sample_rate)
-                if args.highpass is not None:
-                    data = highpass(data, args.highpass, sample_rate)
-                if args.bandpass is not None:
-                    parts = [float(x) for x in args.bandpass.split(",")]
-                    if len(parts) == 2:
-                        data = bandpass(data, parts[0], parts[1], sample_rate)
-                if args.envelope is not None:
-                    parts = [float(x) for x in args.envelope.split(",")]
-                    if len(parts) == 4:
-                        data = apply_envelope(
-                            data, parts[0], parts[1], parts[2], parts[3], sample_rate
+                for seed_val in seeds_to_use:
+                    rng = np.random.default_rng(seed_val) if seed_val is not None else None
+                    if mix_weights is not None:
+                        data = mix_noise(
+                            n_samples, n_channels=n_channels, weights=mix_weights, rng=rng
+                        )
+                    else:
+                        data = NOISE_GENERATORS[noise_type](
+                            n_samples, n_channels=n_channels, rng=rng
                         )
 
-                if args.width is not None:
-                    data = stereo_width(data, args.width)
-                if args.pan is not None:
-                    data = pan(data, args.pan)
-                if args.tremolo is not None:
-                    parts = [float(x) for x in args.tremolo.split(",")]
-                    if len(parts) == 2:
-                        data = modulate_amplitude(data, parts[0], parts[1], sample_rate)
-                if args.bitcrush is not None:
-                    data = bitcrush(data, args.bitcrush)
-                if args.dither is not None:
-                    data = dither(data, args.dither)
-                if args.compressor is not None:
-                    parts = [float(x) for x in args.compressor.split(",")]
-                    if len(parts) == 2:
-                        data = compressor(data, parts[0], parts[1], sample_rate=sample_rate)
-                if args.rms is not None:
-                    data = normalize_rms(data, args.rms)
+                    if args.lufs is not None:
+                        before = measure_loudness(data, sample_rate)
+                        data = lufs_normalize(data, target_lufs=args.lufs, sample_rate=sample_rate)
+                        after = measure_loudness(data, sample_rate)
+                        logger.debug(
+                            "Loudness: %.2f LUFS -> %.2f LUFS (target: %.1f LUFS)",
+                            before,
+                            after,
+                            args.lufs,
+                        )
 
-                if args.stats:
-                    stats = compute_stats(data, sample_rate)
-                    from rich.table import Table
+                    if args.peak is not None:
+                        current_peak = float(np.max(np.abs(data)))
+                        if current_peak > 0:
+                            target_peak = 10.0 ** (args.peak / 20.0)
+                            data = data * (target_peak / current_peak)
 
-                    table = Table(title=f"{noise_type.capitalize()} Noise - Audio Statistics")
-                    table.add_column("Property", style="cyan")
-                    table.add_column("Value", style="yellow")
-                    for prop, val in stats.to_table():
-                        table.add_row(prop, val)
-                    console.print(table)
+                    if args.dc_block:
+                        data = dc_blocker(data)
+                    if args.fade_in is not None:
+                        data = fade_in(data, args.fade_in, sample_rate)
+                    if args.fade_out is not None:
+                        data = fade_out(data, args.fade_out, sample_rate)
+                    if args.reverse:
+                        data = reverse_audio(data)
+                    if args.invert:
+                        data = invert_phase(data)
+                    if args.lowpass is not None:
+                        data = lowpass(data, args.lowpass, sample_rate)
+                    if args.highpass is not None:
+                        data = highpass(data, args.highpass, sample_rate)
+                    if args.bandpass is not None:
+                        parts = [float(x) for x in args.bandpass.split(",")]
+                        if len(parts) == 2:
+                            data = bandpass(data, parts[0], parts[1], sample_rate)
+                    if args.envelope is not None:
+                        parts = [float(x) for x in args.envelope.split(",")]
+                        if len(parts) == 4:
+                            data = apply_envelope(
+                                data, parts[0], parts[1], parts[2], parts[3], sample_rate
+                            )
 
-                if args.spectrum:
-                    nyquist = sample_rate / 2
-                    console.print(
-                        f"\n[bold cyan]Spectrum:[/] [yellow]{noise_type} noise[/] (0 \u2014 {nyquist:.0f} Hz)"
-                    )
-                    spec = ascii_spectrum(data, sample_rate, width=50, height=8)
-                    console.print(spec)
+                    if args.width is not None:
+                        data = stereo_width(data, args.width)
+                    if args.pan is not None:
+                        data = pan(data, args.pan)
+                    if args.tremolo is not None:
+                        parts = [float(x) for x in args.tremolo.split(",")]
+                        if len(parts) == 2:
+                            data = modulate_amplitude(data, parts[0], parts[1], sample_rate)
+                    if args.bitcrush is not None:
+                        data = bitcrush(data, args.bitcrush)
+                    if args.dither is not None:
+                        data = dither(data, args.dither)
+                    if args.compressor is not None:
+                        parts = [float(x) for x in args.compressor.split(",")]
+                        if len(parts) == 2:
+                            data = compressor(data, parts[0], parts[1], sample_rate=sample_rate)
+                    if args.rms is not None:
+                        data = normalize_rms(data, args.rms)
 
-                if args.json is not None:
-                    json_path = Path(args.json)
-                    save_json_stats(data, sample_rate, json_path)
-                    print_success(f"Statistics saved to {json_path}")
+                    if args.stats:
+                        stats = compute_stats(data, sample_rate)
+                        from rich.table import Table
 
-                channel_label = "mono" if n_channels == 1 else ""
-                suffix = f"_{channel_label}" if channel_label else ""
+                        table = Table(title=f"{noise_type.capitalize()} Noise - Audio Statistics")
+                        table.add_column("Property", style="cyan")
+                        table.add_column("Value", style="yellow")
+                        for prop, val in stats.to_table():
+                            table.add_row(prop, val)
+                        console.print(table)
 
-                for fmt in format_configs:
-                    filename = f"{noise_type}_noise{suffix}.{fmt}"
-                    filepath = output_dir / filename
-                    saver = FORMATS[fmt]
-                    saver(filepath, data, sample_rate=sample_rate, bit_depth=args.bit_depth)
-                    files_created.append(filepath)
-                    progress.advance(task)
+                    if args.spectrum:
+                        nyquist = sample_rate / 2
+                        console.print(
+                            f"\n[bold cyan]Spectrum:[/] [yellow]{noise_type} noise[/] (0 \u2014 {nyquist:.0f} Hz)"
+                        )
+                        spec = ascii_spectrum(data, sample_rate, width=50, height=8)
+                        console.print(spec)
+
+                    if args.json is not None:
+                        json_path = Path(args.json)
+                        save_json_stats(data, sample_rate, json_path)
+                        print_success(f"Statistics saved to {json_path}")
+
+                    for fmt in format_configs:
+                        if args.pattern:
+                            ch_label = "mono" if n_channels == 1 else "stereo"
+                            filename = args.pattern.format(
+                                type=noise_type,
+                                channels=ch_label,
+                                format=fmt,
+                                sr=sample_rate,
+                                bits=args.bit_depth,
+                                seed=seed_val if seed_val is not None else 0,
+                            )
+                        else:
+                            channel_label = "mono" if n_channels == 1 else ""
+                            suffix = f"_{channel_label}" if channel_label else ""
+                            filename = f"{noise_type}_noise{suffix}.{fmt}"
+                        filepath = output_dir / filename
+                        saver = FORMATS[fmt]
+                        saver(filepath, data, sample_rate=sample_rate, bit_depth=args.bit_depth)
+                        files_created.append(filepath)
+                        progress.advance(task)
 
             if args.play:
                 try:

@@ -202,6 +202,14 @@ class TestParseArgs:
         with pytest.raises(SystemExit):
             parse_args(["--type", "green"])
 
+    def test_pattern(self) -> None:
+        args = parse_args(["--pattern", "{type}_{format}_{sr}"])
+        assert args.pattern == "{type}_{format}_{sr}"
+
+    def test_seeds(self) -> None:
+        args = parse_args(["--seeds", "1,2,3,42,100"])
+        assert args.seeds == "1,2,3,42,100"
+
 
 def test_config_load_json(tmp_path: Path) -> None:
     config_file = tmp_path / "config.json"
